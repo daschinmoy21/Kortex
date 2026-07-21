@@ -118,13 +118,30 @@ bun tauri dev
 
 ## Configuration
 
-Create a `.env` file in the root directory with your API keys (optional, you can also set them in-app):
+### Google AI API Key
 
-```env
-OPENAI_API_KEY=your_openai_key
-GROQ_API_KEY=your_groq_key
-GOOGLE_GENERATIVE_AI_API_KEY=your_google_key
-```
+Logia uses Google Generative AI for intelligent note generation and editing. To enable AI features:
+
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey)
+2. Open Logia and go to **Settings**
+3. Enter your API key under the **Google AI** section
+4. The key is stored securely via the system keyring / encrypted config — no `.env` files needed
+
+> **Note**: Logia no longer requires Google OAuth. Only an API key is needed.
+
+### Git Sync
+
+1. Create a **private** git repository (GitHub, GitLab, etc.)
+2. Open Logia → **Settings** → **Git Sync**
+3. Paste your remote URL (e.g., `git@github.com:user/logia-notes.git`) and branch name
+4. Click **Connect Remote**, then use **Sync Now** to push/pull changes
+
+**Authentication**: Logia uses your system's git credentials — SSH keys, `gh auth`, or git credential helper. No OAuth tokens are stored.
+
+### Optional Dependencies
+
+- **git** — required for Git Sync
+- **Python 3.12+** and **FFmpeg** — required for audio transcription (the preflight check surfaces missing dependencies on first run)
 
 ## Development
 
