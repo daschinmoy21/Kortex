@@ -1,2 +1,0 @@
-This file ensures the src-tauri/bin/* resource glob matches during Tauri packaging.
-Remove or replace this file with your real helper binary (AudioCapture.exe) when publishing.

@@ -1,28 +1,31 @@
 import { useNotesStore } from "@/store/notesStore";
 import { motion } from "framer-motion";
-import { FileText, Clock, Layout, ArrowRight, Cloud, RefreshCw, Loader2 } from "lucide-react";
+import { FileText, Clock, Layout, ArrowRight, GitBranch, RefreshCw, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { invoke } from "@tauri-apps/api/core";
 import useUiStore from "../store/UiStore";
 
-// Type for the detailed sync result from backend
-interface SyncResult {
-  notes_uploaded: number;
-  notes_downloaded: number;
-  folders_uploaded: number;
-  folders_downloaded: number;
-  kanban_uploaded: number;
-  kanban_downloaded: number;
-  trash_uploaded: number;
-  trash_downloaded: number;
-  needs_reload: boolean;
+interface GitSyncStatus {
+  configured: boolean;
+  remote_url: string | null;
+  branch: string;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+  last_sync: string | null;
+  git_available: boolean;
   message: string;
+}
+
+interface GitSyncResult {
+  message: string;
+  needs_reload: boolean;
 }
 
 export function EmptyState() {
   const { createNote, notes } = useNotesStore();
   const recentNotes = notes.slice(0, 3);
-  const { googleDriveConnected, setGoogleDriveConnected, isSyncing, setIsSyncing, setLastSyncedAt } = useUiStore();
+  const { gitSyncConfigured, setGitSyncConfigured, isSyncing, setIsSyncing, setLastSyncedAt } = useUiStore();
 
   const quickActions = [
     {
@@ -94,7 +97,7 @@ export function EmptyState() {
           ))}
         </motion.div>
 
-        {/* Cloud Sync Card */}
+        {/* Git Sync Card */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -104,36 +107,29 @@ export function EmptyState() {
           <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-800/30 rounded-xl border border-zinc-800/50 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${googleDriveConnected ? 'bg-green-500/20' : 'bg-blue-500/10'}`}>
-                  <Cloud className={`w-5 h-5 ${googleDriveConnected ? 'text-green-400' : 'text-blue-400'}`} />
+                <div className={`p-2 rounded-lg ${gitSyncConfigured ? 'bg-green-500/20' : 'bg-zinc-700/50'}`}>
+                  <GitBranch className={`w-5 h-5 ${gitSyncConfigured ? 'text-green-400' : 'text-zinc-400'}`} />
                 </div>
                 <div>
                   <div className="text-sm font-medium text-zinc-200">
-                    {googleDriveConnected ? 'Cloud Backup Active' : 'Enable Cloud Backup'}
+                    {gitSyncConfigured ? 'Git Sync Active' : 'Enable Git Sync'}
                   </div>
                   <div className="text-xs text-zinc-500">
-                    {googleDriveConnected ? 'Your notes are synced' : 'Sync notes to Google Drive'}
+                    {gitSyncConfigured ? 'Your notes are synced via git' : 'Sync notes with a git remote'}
                   </div>
                 </div>
               </div>
               <button
                 onClick={async () => {
-                  if (!googleDriveConnected) {
-                    const toastId = toast.loading('Check your browser...');
-                    try {
-                      await invoke('connect_google_drive');
-                      setGoogleDriveConnected(true);
-                      toast.success('Connected!', { id: toastId });
-                    } catch (e) {
-                      toast.error(`Failed: ${e}`, { id: toastId });
-                    }
+                  if (!gitSyncConfigured) {
+                    // Open settings for configuration
+                    useUiStore.getState().setIsSettingsOpen(true);
                   } else {
                     setIsSyncing(true);
                     try {
-                      const result = await invoke<SyncResult>('sync_all_to_google_drive');
+                      const result = await invoke<GitSyncResult>('git_sync_now');
                       toast.success(result.message);
                       setLastSyncedAt(new Date());
-                      // Reload notes and folders if anything was downloaded
                       if (result.needs_reload) {
                         const { loadNotes, loadFolders } = useNotesStore.getState();
                         await loadNotes();
@@ -147,17 +143,17 @@ export function EmptyState() {
                   }
                 }}
                 disabled={isSyncing}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${googleDriveConnected
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all ${gitSyncConfigured
                   ? 'bg-zinc-700 text-zinc-200 hover:bg-zinc-600'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
                   } disabled:opacity-50`}
               >
                 {isSyncing ? (
                   <><Loader2 className="w-3 h-3 animate-spin" /> Syncing</>
-                ) : googleDriveConnected ? (
+                ) : gitSyncConfigured ? (
                   <><RefreshCw className="w-3 h-3" /> Sync</>
                 ) : (
-                  <>Connect</>
+                  <>Configure</>
                 )}
               </button>
             </div>

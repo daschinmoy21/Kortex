@@ -64,14 +64,9 @@
       ];
     in {
       packages = {
-        # Function to build logia with Google OAuth credentials
-        logia = {
-          googleClientId ? "",
-          googleClientSecret ? "",
-        }:
-          pkgs.rustPlatform.buildRustPackage rec {
+        logia = pkgs.rustPlatform.buildRustPackage rec {
             pname = "logia";
-            version = "0.9.4";
+            version = "0.9.5";
 
             src = ./.;
 
@@ -88,8 +83,6 @@
 
             # Environment variables for the build
             OPENSSL_NO_VENDOR = 1;
-            GOOGLE_CLIENT_ID = googleClientId;
-            GOOGLE_CLIENT_SECRET = googleClientSecret;
 
             # Override the default build phase to use cargo-tauri properly
             buildPhase = ''
@@ -97,10 +90,6 @@
 
               echo "Frontend dist contents:"
               ls -la dist/
-
-              # Export Google OAuth credentials for build.rs
-              export GOOGLE_CLIENT_ID="${googleClientId}"
-              export GOOGLE_CLIENT_SECRET="${googleClientSecret}"
 
               cd src-tauri
 
@@ -172,9 +161,7 @@
             };
           };
 
-        # Default package - uses empty credentials (Google Drive sync disabled)
-        # To enable Google Drive, use: logia { googleClientId = builtins.readFile /home/USER/.config/logia-secrets/google-client-id; ... }
-        default = self.packages.${system}.logia {};
+        default = self.packages.${system}.logia;
       };
 
       # Development shell (still uses bun for live development)

@@ -1,6 +1,6 @@
 [package]
 name = "logia"
-version = "0.9.4"
+version = "0.9.5"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -34,16 +34,8 @@ keyring = "3.6.3"
 tauri-plugin-shell = "2"
 aes-gcm = "0.10"
 base64 = "0.22"
-google-drive3 = "5.0"
-yup-oauth2 = "8.1"
-hyper = { version = "0.14", features = ["full"] }
-hyper-rustls = "0.24"
-mime = "0.3"
-# Ensure tokio is available with full features for async tasks
 tokio = { version = "1", features = ["full"] }
 dirs = "5"
-open = "3"
-sha2 = "0.10"
 rand = "0.8"
 fs2 = "0.4"
 

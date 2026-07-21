@@ -2,24 +2,25 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogPanel, DialogTitle, Description } from '@headlessui/react';
 import { invoke } from '@tauri-apps/api/core';
 import useUiStore from '../store/UiStore';
-import { X, Cloud, CloudOff, RefreshCw, Check, Loader2, AlertTriangle, Download, Upload } from 'lucide-react';
+import { X, RefreshCw, Check, Loader2, AlertTriangle, Download, Upload, GitBranch, Link2, Unlink } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { SyncConflictDialog } from './SyncConflictDialog';
 
-// Type for sync plan from backend
-interface SyncAction {
-  path: string;
-  status: string;
-  local_modified: string | null;
-  cloud_modified: string | null;
+// Git sync status from backend
+interface GitSyncStatus {
+  configured: boolean;
+  remote_url: string | null;
+  branch: string;
+  dirty: boolean;
+  ahead: number;
+  behind: number;
+  last_sync: string | null;
+  git_available: boolean;
+  message: string;
 }
 
-interface SyncPlan {
-  uploads: SyncAction[];
-  downloads: SyncAction[];
-  conflicts: SyncAction[];
-  deletions_local: SyncAction[];
-  deletions_cloud: SyncAction[];
+interface GitSyncResult {
+  message: string;
+  needs_reload: boolean;
 }
 
 export const Settings = () => {
@@ -27,8 +28,8 @@ export const Settings = () => {
     isSettingsOpen,
     setIsSettingsOpen,
     setGoogleApiKey,
-    googleDriveConnected,
-    setGoogleDriveConnected,
+    gitSyncConfigured,
+    setGitSyncConfigured,
     isSyncing,
     setIsSyncing,
     lastSyncedAt,
@@ -36,41 +37,33 @@ export const Settings = () => {
   } = useUiStore();
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isConnectingDrive, setIsConnectingDrive] = useState(false); // [NEW]
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isInstallingDeps, setIsInstallingDeps] = useState(false);
   const [installStatus, setInstallStatus] = useState<'idle' | 'installing' | 'installed' | 'error'>('idle');
   const [installLog, setInstallLog] = useState<string>('');
-  const [syncConflict, setSyncConflict] = useState<{ local: number; remote: number } | null>(null);
-  const [syncPlan, setSyncPlan] = useState<SyncPlan | null>(null);
-  const [showSyncDialog, setShowSyncDialog] = useState(false);
+  // Git sync state
+  const [remoteUrl, setRemoteUrl] = useState('');
+  const [branchName, setBranchName] = useState('main');
+  const [gitStatus, setGitStatus] = useState<GitSyncStatus | null>(null);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (isSettingsOpen) {
       loadApiKey();
-      checkDriveStatus(); // [NEW]
+      checkGitStatus();
     }
   }, [isSettingsOpen]);
 
-  const checkDriveStatus = async () => {
+  const checkGitStatus = async () => {
     try {
-      const status = await invoke<{ is_authenticated: boolean }>('get_google_drive_status');
-      setGoogleDriveConnected(status.is_authenticated);
+      const status = await invoke<GitSyncStatus>('git_sync_status');
+      setGitStatus(status);
+      setGitSyncConfigured(status.configured);
+      if (status.remote_url) setRemoteUrl(status.remote_url);
+      if (status.branch) setBranchName(status.branch);
+      if (status.last_sync) setLastSyncedAt(new Date(status.last_sync));
     } catch (e) {
-      console.error('Failed to check drive status', e);
-    }
-  };
-
-  const checkForConflicts = async () => {
-    try {
-      const status = await invoke<{ local_count: number; remote_count: number; has_conflict: boolean }>('check_sync_status');
-      if (status.has_conflict) {
-        setSyncConflict({ local: status.local_count, remote: status.remote_count });
-      } else {
-        setSyncConflict(null);
-      }
-    } catch (e) {
-      console.error('Failed to check sync status', e);
+      console.error('Failed to check git status', e);
     }
   };
 
@@ -78,10 +71,9 @@ export const Settings = () => {
     try {
       const key = await invoke<string>('get_google_api_key');
       setApiKey(key);
-      setGoogleApiKey(key); // Also update the store
+      setGoogleApiKey(key);
     } catch (error) {
       console.error('Failed to load API key:', error);
-      // Don't show error to user if it's just missing (first run)
     }
   };
 
@@ -96,8 +88,6 @@ export const Settings = () => {
     setStatus('saving');
     try {
       await invoke('save_google_api_key', { key: apiKey });
-      // Update store inside a transition or timeout to avoid blocking UI during render if expensive? 
-      // Actually standard SetState is fine. 
       setGoogleApiKey(apiKey);
       setStatus('saved');
       toast.success('API Key saved successfully');
@@ -144,6 +134,98 @@ export const Settings = () => {
     }
   };
 
+  // Git sync actions
+  const handleGitConfigure = async () => {
+    if (!remoteUrl.trim()) {
+      toast.error('Remote URL is required');
+      return;
+    }
+    setIsSyncing(true);
+    try {
+      const result = await invoke<GitSyncStatus>('git_sync_configure', {
+        remoteUrl: remoteUrl.trim(),
+        branch: branchName.trim() || 'main',
+      });
+      setGitStatus(result);
+      setGitSyncConfigured(result.configured);
+      toast.success('Git sync configured!');
+    } catch (e) {
+      toast.error(`Configure failed: ${e}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGitSyncNow = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await invoke<GitSyncResult>('git_sync_now');
+      toast.success(result.message);
+      setLastSyncedAt(new Date());
+      setSyncResult(result.message);
+      await checkGitStatus();
+      if (result.needs_reload) {
+        const { loadNotes, loadFolders } = (await import('../store/notesStore')).useNotesStore.getState();
+        await loadNotes();
+        await loadFolders();
+      }
+    } catch (e) {
+      toast.error(`Sync failed: ${e}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGitForcePull = async () => {
+    if (!confirm('This will discard ALL local changes and replace them with the remote state. Continue?')) return;
+    setIsSyncing(true);
+    try {
+      const result = await invoke<GitSyncResult>('git_sync_force_pull');
+      toast.success(result.message);
+      setLastSyncedAt(new Date());
+      await checkGitStatus();
+      // Reload notes
+      const { loadNotes, loadFolders } = (await import('../store/notesStore')).useNotesStore.getState();
+      await loadNotes();
+      await loadFolders();
+    } catch (e) {
+      toast.error(`Force pull failed: ${e}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGitForcePush = async () => {
+    if (!confirm('This will force-push your local state to the remote, overwriting remote changes. Continue?')) return;
+    setIsSyncing(true);
+    try {
+      const result = await invoke<GitSyncResult>('git_sync_force_push');
+      toast.success(result.message);
+      setLastSyncedAt(new Date());
+      await checkGitStatus();
+    } catch (e) {
+      toast.error(`Force push failed: ${e}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleGitDisconnect = async () => {
+    setIsSyncing(true);
+    try {
+      const msg = await invoke<string>('git_sync_disconnect');
+      toast.success(msg);
+      setGitSyncConfigured(false);
+      setGitStatus(null);
+      setLastSyncedAt(null);
+      setRemoteUrl('');
+    } catch (e) {
+      toast.error(`Disconnect failed: ${e}`);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Poll the backend install log while installation is running so the UI can show progress
   useEffect(() => {
     let timer: number | undefined;
@@ -158,10 +240,8 @@ export const Settings = () => {
 
     if (isInstallingDeps) {
       poll();
-      // poll every second
       timer = window.setInterval(poll, 1000);
     } else {
-      // fetch once when not installing
       poll();
     }
 
@@ -251,211 +331,144 @@ export const Settings = () => {
                 </div>
               </div>
 
-              {/* Google Drive Sync Section */}
+              {/* Git Sync Section */}
               <div className="bg-gradient-to-br from-zinc-800/50 to-zinc-900/50 rounded-xl p-4 border border-zinc-700/50">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className={`p-2 rounded-lg ${googleDriveConnected ? 'bg-green-500/20' : 'bg-zinc-700/50'}`}>
-                    {googleDriveConnected ? (
-                      <Cloud className="w-5 h-5 text-green-400" />
-                    ) : (
-                      <CloudOff className="w-5 h-5 text-zinc-400" />
-                    )}
+                  <div className={`p-2 rounded-lg ${gitSyncConfigured ? 'bg-green-500/20' : 'bg-zinc-700/50'}`}>
+                    <GitBranch className={`w-5 h-5 ${gitSyncConfigured ? 'text-green-400' : 'text-zinc-400'}`} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-zinc-200">Google Drive Sync</h3>
+                    <h3 className="text-sm font-semibold text-zinc-200">Git Sync</h3>
                     <p className="text-xs text-zinc-500">
-                      {googleDriveConnected ? 'Your notes are backed up to the cloud' : 'Connect to backup your notes'}
+                      {gitSyncConfigured ? 'Notes are synced via git' : 'Sync notes using a git remote'}
                     </p>
                   </div>
                 </div>
 
-                {!googleDriveConnected ? (
-                  <button
-                    onClick={async () => {
-                      setIsConnectingDrive(true);
-                      const toastId = toast.loading('Check your browser tabs to login...');
-                      try {
-                        await invoke('connect_google_drive');
-                        setGoogleDriveConnected(true);
-                        toast.success('Connected to Google Drive!', { id: toastId });
-                        // Check for conflicts after connecting
-                        await checkForConflicts();
-                      } catch (e) {
-                        console.error(e);
-                        toast.error(`Connection failed: ${e}`, { id: toastId });
-                      } finally {
-                        setIsConnectingDrive(false);
-                      }
-                    }}
-                    disabled={isConnectingDrive}
-                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-all"
-                  >
-                    {isConnectingDrive ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Connecting...
-                      </>
-                    ) : (
-                      <>
-                        <Cloud className="w-4 h-4" />
-                        Connect Google Drive
-                      </>
-                    )}
-                  </button>
-                ) : (
-                  <div className="space-y-3">
-                    {/* Status Bar */}
-                    <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-green-400" />
-                        <span className="text-xs text-zinc-300">Connected</span>
-                      </div>
-                      <span className="text-xs text-zinc-500">
-                        {lastSyncedAt ? `Last sync: ${lastSyncedAt.toLocaleTimeString()}` : 'Not synced yet'}
-                      </span>
+                {/* Git not available warning */}
+                {gitStatus && !gitStatus.git_available && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs text-amber-400">git not found on PATH. Install git to enable sync.</span>
                     </div>
-
-                    {/* Conflict Resolution */}
-                    {syncConflict && (
-                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <AlertTriangle className="w-4 h-4 text-amber-400" />
-                          <span className="text-xs font-medium text-amber-400">Sync Conflict Detected</span>
-                        </div>
-                        <p className="text-xs text-zinc-400 mb-3">
-                          Local: {syncConflict.local} notes • Cloud: {syncConflict.remote} notes
-                        </p>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={async () => {
-                              try {
-                                setIsSyncing(true);
-                                const msg = await invoke<string>('force_sync_from_cloud');
-                                toast.success(msg);
-                                setSyncConflict(null);
-                                setLastSyncedAt(new Date());
-                              } catch (e) {
-                                toast.error(`Failed: ${e}`);
-                              } finally {
-                                setIsSyncing(false);
-                              }
-                            }}
-                            disabled={isSyncing}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                          >
-                            <Download className="w-3 h-3" />
-                            Use Cloud
-                          </button>
-                          <button
-                            onClick={async () => {
-                              try {
-                                setIsSyncing(true);
-                                const msg = await invoke<string>('force_sync_to_cloud');
-                                toast.success(msg);
-                                setSyncConflict(null);
-                                setLastSyncedAt(new Date());
-                              } catch (e) {
-                                toast.error(`Failed: ${e}`);
-                              } finally {
-                                setIsSyncing(false);
-                              }
-                            }}
-                            disabled={isSyncing}
-                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-600 text-white hover:bg-zinc-500 disabled:opacity-50"
-                          >
-                            <Upload className="w-3 h-3" />
-                            Use Local
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Sync Button with Progress Bar */}
-                    <button
-                      onClick={async () => {
-                        setIsSyncing(true);
-                        try {
-                          // Get the sync plan to check for conflicts
-                          const plan = await invoke<SyncPlan>('get_sync_plan');
-                          setSyncPlan(plan);
-
-                          // If there are conflicts or any pending changes, show dialog
-                          const hasChanges = plan.uploads.length > 0 ||
-                            plan.downloads.length > 0 ||
-                            plan.conflicts.length > 0 ||
-                            plan.deletions_local.length > 0 ||
-                            plan.deletions_cloud.length > 0;
-
-                          if (hasChanges) {
-                            setShowSyncDialog(true);
-                          } else {
-                            toast.success('Everything is already in sync!');
-                          }
-                        } catch (e) {
-                          console.error(e);
-                          toast.error(`Failed to check sync status: ${e}`);
-                        } finally {
-                          setIsSyncing(false);
-                        }
-                      }}
-                      disabled={isSyncing}
-                      className="relative w-full overflow-hidden rounded-lg text-sm font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 disabled:cursor-not-allowed transition-all"
-                    >
-                      {/* Animated Progress Bar (visible when syncing) */}
-                      {isSyncing && (
-                        <div className="absolute inset-0 bg-gradient-to-r from-zinc-600/30 via-zinc-500/40 to-zinc-600/30 animate-pulse" />
-                      )}
-                      {isSyncing && (
-                        <div
-                          className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-cyan-400"
-                          style={{
-                            animation: 'progress 2s ease-in-out infinite',
-                          }}
-                        />
-                      )}
-                      <style>{`
-                      @keyframes progress {
-                        0% { width: 0%; }
-                        50% { width: 80%; }
-                        100% { width: 100%; }
-                      }
-                    `}</style>
-                      <div className="relative flex items-center justify-center gap-2 px-4 py-2.5">
-                        {isSyncing ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Syncing...</span>
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="w-4 h-4" />
-                            <span>Sync Now</span>
-                          </>
-                        )}
-                      </div>
-                    </button>
-
-                    {/* Disconnect Button */}
-                    <button
-                      onClick={async () => {
-                        try {
-                          await invoke('disconnect_google_drive');
-                          setGoogleDriveConnected(false);
-                          setLastSyncedAt(null);
-                          setSyncConflict(null);
-                          toast.success('Disconnected from Google Drive');
-                        } catch (e) {
-                          console.error(e);
-                          toast.error(`Failed to disconnect: ${e}`);
-                        }
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                    >
-                      <CloudOff className="w-3 h-3" />
-                      Disconnect Account
-                    </button>
                   </div>
                 )}
+
+                {/* Configuration inputs (always visible, simpler flow) */}
+                <div className="space-y-3 mb-3">
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Remote URL</label>
+                    <input
+                      type="text"
+                      value={remoteUrl}
+                      onChange={(e) => setRemoteUrl(e.target.value)}
+                      placeholder="git@github.com:user/logia-notes.git"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-400 mb-1">Branch</label>
+                    <input
+                      type="text"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      placeholder="main"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Status bar */}
+                {gitSyncConfigured && gitStatus && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-zinc-800/50 rounded-lg mb-3">
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 text-green-400" />
+                      <span className="text-xs text-zinc-300">
+                        {gitStatus.branch}
+                        {gitStatus.ahead > 0 && <span className="text-blue-400 ml-1">↑{gitStatus.ahead}</span>}
+                        {gitStatus.behind > 0 && <span className="text-amber-400 ml-1">↓{gitStatus.behind}</span>}
+                        {gitStatus.dirty && <span className="text-yellow-400 ml-1">•</span>}
+                      </span>
+                    </div>
+                    <span className="text-xs text-zinc-500">
+                      {lastSyncedAt ? `Last sync: ${lastSyncedAt.toLocaleTimeString()}` : 'Not synced yet'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="space-y-2">
+                  {!gitSyncConfigured ? (
+                    <button
+                      onClick={handleGitConfigure}
+                      disabled={isSyncing || !remoteUrl.trim()}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-all"
+                    >
+                      {isSyncing ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Configuring...</>
+                      ) : (
+                        <><Link2 className="w-4 h-4" /> Connect Remote</>
+                      )}
+                    </button>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleGitSyncNow}
+                          disabled={isSyncing}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 transition-all"
+                        >
+                          {isSyncing ? (
+                            <><RefreshCw className="w-4 h-4 animate-spin" /> Syncing...</>
+                          ) : (
+                            <><RefreshCw className="w-4 h-4" /> Sync Now</>
+                          )}
+                        </button>
+                        <button
+                          onClick={handleGitConfigure}
+                          disabled={isSyncing}
+                          className="px-4 py-2 rounded-lg text-sm font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 disabled:opacity-50 transition-all"
+                          title="Update remote URL"
+                        >
+                          <Link2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Force pull / push */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleGitForcePull}
+                          disabled={isSyncing}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50 transition-all"
+                          title="Discard local changes, use remote"
+                        >
+                          <Download className="w-3 h-3" />
+                          Use Remote
+                        </button>
+                        <button
+                          onClick={handleGitForcePush}
+                          disabled={isSyncing}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium bg-zinc-600 text-white hover:bg-zinc-500 disabled:opacity-50 transition-all"
+                          title="Overwrite remote with local"
+                        >
+                          <Upload className="w-3 h-3" />
+                          Use Local
+                        </button>
+                      </div>
+
+                      {/* Disconnect */}
+                      <button
+                        onClick={handleGitDisconnect}
+                        disabled={isSyncing}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <Unlink className="w-3 h-3" />
+                        Disconnect Remote
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               <div className="flex justify-end pt-4 border-t border-zinc-800">
@@ -463,10 +476,7 @@ export const Settings = () => {
                   <button
                     onClick={handleRemoveApiKey}
                     disabled={isLoading}
-                    className={`
-                    mr-2 px-4 py-2 rounded-lg text-sm font-medium transition-all
-                    bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed
-                  `}
+                    className="mr-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Remove API Key
                   </button>
@@ -474,14 +484,13 @@ export const Settings = () => {
                 <button
                   onClick={handleSave}
                   disabled={isLoading || !apiKey}
-                  className={`
-                  px-4 py-2 rounded-lg text-sm font-medium transition-all
-                  ${status === 'saved'
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    status === 'saved'
                       ? 'bg-green-600 text-white hover:bg-green-700'
                       : status === 'error'
                         ? 'bg-red-600 text-white hover:bg-red-700'
-                        : 'bg-zinc-100 text-zinc-900 hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed'}
-                `}
+                        : 'bg-zinc-100 text-zinc-900 hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed'
+                  }`}
                 >
                   {status === 'saving' ? 'Saving...' :
                     status === 'saved' ? 'Saved!' :
@@ -492,17 +501,6 @@ export const Settings = () => {
           </DialogPanel>
         </div>
       </Dialog>
-
-      {/* Sync Conflict Dialog */}
-      <SyncConflictDialog
-        isOpen={showSyncDialog}
-        onClose={() => setShowSyncDialog(false)}
-        syncPlan={syncPlan}
-        onSyncComplete={() => {
-          setLastSyncedAt(new Date());
-          setSyncPlan(null);
-        }}
-      />
     </>
   );
 };

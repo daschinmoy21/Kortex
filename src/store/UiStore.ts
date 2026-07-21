@@ -30,7 +30,7 @@ interface UiState {
   isSidebarFloating: boolean;
   expandedFolders: Set<string>;
   googleApiKey: string;
-  googleDriveConnected: boolean;
+  gitSyncConfigured: boolean;
   isSyncing: boolean; // [NEW]
   lastSyncedAt: Date | null; // [NEW]
   editor: any | null;
@@ -56,7 +56,7 @@ interface UiState {
   setIsSidebarFloating: (isFloating: boolean) => void;
   setExpandedFolders: (folders: Set<string>) => void;
   setGoogleApiKey: (key: string) => void;
-  setGoogleDriveConnected: (connected: boolean) => void;
+  setGitSyncConfigured: (configured: boolean) => void;
   setIsSyncing: (isSyncing: boolean) => void; // [NEW]
   setLastSyncedAt: (date: Date | null) => void; // [NEW]
   setEditor: (editor: any) => void;
@@ -116,7 +116,7 @@ const useUiStore = create<UiState>((set) => ({
   expandedFolders: new Set(),
   deleteConfirmFolderId: null,
   googleApiKey: '',
-  googleDriveConnected: false,
+  gitSyncConfigured: false,
   isSyncing: false, // [NEW]
   lastSyncedAt: null, // [NEW]
   editor: null,
@@ -148,7 +148,7 @@ const useUiStore = create<UiState>((set) => ({
   setIsSidebarFloating: (isFloating) => set({ isSidebarFloating: isFloating }),
   setExpandedFolders: (expandedFolders) => set({ expandedFolders }),
   setGoogleApiKey: (key) => set({ googleApiKey: key }),
-  setGoogleDriveConnected: (connected) => set({ googleDriveConnected: connected }),
+  setGitSyncConfigured: (configured) => set({ gitSyncConfigured: configured }),
   setIsSyncing: (isSyncing) => set({ isSyncing }), // [NEW]
   setLastSyncedAt: (date) => set({ lastSyncedAt: date }), // [NEW]
   setEditor: (editor) => set({ editor }),
