@@ -512,17 +512,55 @@ async fn update_folder(folder: Folder, app_handle: tauri::AppHandle) -> Result<(
     Ok(())
 }
 
+/// Collect all descendant folder IDs for a given folder via BFS on parent_id chain.
+fn collect_descendant_folder_ids(folders_dir: &PathBuf, root_id: &str) -> Vec<String> {
+    let mut all_folders: Vec<Folder> = Vec::new();
+    if let Ok(entries) = fs::read_dir(folders_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(folder) = serde_json::from_str::<Folder>(&content) {
+                        all_folders.push(folder);
+                    }
+                }
+            }
+        }
+    }
+    // BFS: start from root_id, collect all children recursively
+    let mut descendants: Vec<String> = Vec::new();
+    let mut queue: Vec<String> = all_folders
+        .iter()
+        .filter(|f| f.parent_id.as_deref() == Some(root_id))
+        .map(|f| f.id.clone())
+        .collect();
+    while let Some(current) = queue.pop() {
+        descendants.push(current.clone());
+        let children: Vec<String> = all_folders
+            .iter()
+            .filter(|f| f.parent_id.as_deref() == Some(&current))
+            .map(|f| f.id.clone())
+            .collect();
+        queue.extend(children);
+    }
+    descendants
+}
+
 #[tauri::command]
 async fn delete_folder(folder_id: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     require_safe_id(&folder_id)?;
     let folders_dir = get_folders_directory(&app_handle)?;
     let notes_dir = get_notes_directory(&app_handle)?;
     let trash_dir = get_trash_directory(&app_handle)?;
-    let source_path = folders_dir.join(format!("{}.json", folder_id));
-    let dest_path = trash_dir.join(format!("folder_{}.json", folder_id));
 
-    // Also trash notes that belong to this folder so they aren't orphaned on disk
-    // while disappearing from the UI (frontend filters them out of state).
+    // 1. Collect all descendant folder IDs via parent_id chain
+    let descendant_ids = collect_descendant_folder_ids(&folders_dir, &folder_id);
+
+    // Build the full set: the folder itself + all descendants
+    let mut all_affected_folder_ids = descendant_ids.clone();
+    all_affected_folder_ids.push(folder_id.clone());
+
+    // 2. Trash all notes whose folder_id is any affected folder
     if let Ok(entries) = fs::read_dir(&notes_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -531,7 +569,7 @@ async fn delete_folder(folder_id: String, app_handle: tauri::AppHandle) -> Resul
             }
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(note) = serde_json::from_str::<Note>(&content) {
-                    if note.folder_id.as_deref() == Some(folder_id.as_str()) {
+                    if note.folder_id.as_ref().map_or(false, |fid| all_affected_folder_ids.contains(fid)) {
                         let note_trash = trash_dir.join(format!("note_{}.json", note.id));
                         if fs::rename(&path, &note_trash).is_err() {
                             let _ = fs::copy(&path, &note_trash);
@@ -542,8 +580,22 @@ async fn delete_folder(folder_id: String, app_handle: tauri::AppHandle) -> Resul
             }
         }
     }
-    
-    // Move folder metadata to trash instead of deleting
+
+    // 3. Trash all descendant folders (deepest-first not required — any order works)
+    for desc_id in &descendant_ids {
+        let src = folders_dir.join(format!("{}.json", desc_id));
+        let dst = trash_dir.join(format!("folder_{}.json", desc_id));
+        if src.exists() {
+            if fs::rename(&src, &dst).is_err() {
+                let _ = fs::copy(&src, &dst);
+                let _ = fs::remove_file(&src);
+            }
+        }
+    }
+
+    // 4. Trash F itself
+    let source_path = folders_dir.join(format!("{}.json", folder_id));
+    let dest_path = trash_dir.join(format!("folder_{}.json", folder_id));
     if let Err(_) = fs::rename(&source_path, &dest_path) {
         fs::copy(&source_path, &dest_path)
             .map_err(|e| format!("Failed to copy folder to trash: {}", e))?;

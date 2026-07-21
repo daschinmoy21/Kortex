@@ -188,12 +188,34 @@ export const useNotesStore = create<NotesState>()(
       try {
         await invoke('delete_folder', { folderId: id });
 
-        set((state) => ({
-          folders: state.folders.filter((folder) => folder.id !== id),
-          // Also remove notes in this folder
-          notes: state.notes.filter((note) => note.folder_id !== id),
-          currentNote: state.currentNote?.folder_id === id ? null : state.currentNote,
-        }));
+        // Collect all descendant folder IDs via BFS on parent_id chain
+        const collectDescendants = (rootId: string, folders: Folder[]): string[] => {
+          const descendants: string[] = [];
+          const queue = folders.filter(f => f.parent_id === rootId).map(f => f.id);
+          while (queue.length > 0) {
+            const current = queue.shift()!;
+            descendants.push(current);
+            const children = folders.filter(f => f.parent_id === current).map(f => f.id);
+            queue.push(...children);
+          }
+          return descendants;
+        };
+
+        set((state) => {
+          const descendantIds = collectDescendants(id, state.folders);
+          const allAffectedIds = [id, ...descendantIds];
+
+          return {
+            // Remove the folder and all nested descendants
+            folders: state.folders.filter((folder) => !allAffectedIds.includes(folder.id)),
+            // Remove notes in the folder and all descendant folders
+            notes: state.notes.filter((note) => !note.folder_id || !allAffectedIds.includes(note.folder_id)),
+            // Clear currentNote if it was in any affected folder
+            currentNote: state.currentNote?.folder_id && allAffectedIds.includes(state.currentNote.folder_id)
+              ? null
+              : state.currentNote,
+          };
+        });
       } catch (error) {
         console.error('Failed to delete folder:', error);
         throw error;
