@@ -52,14 +52,14 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), String
 
 /// Validate that a user-supplied id is safe to use as a filename segment.
 /// Rejects path separators, parent traversal, and other unexpected characters.
-fn is_safe_id(id: &str) -> bool {
+pub(crate) fn is_safe_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
         && !id.contains("..")
         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-fn require_safe_id(id: &str) -> Result<(), String> {
+pub(crate) fn require_safe_id(id: &str) -> Result<(), String> {
     if is_safe_id(id) {
         Ok(())
     } else {
@@ -84,10 +84,14 @@ const KEYRING_SERVICE_MASTER: &str = "Logia";
 const KEYRING_USERNAME_MASTER: &str = "encryption_master_key";
 
 /// Get or create the per-installation encryption key.
-/// The key is stored in the OS keyring for security. If keyring is unavailable,
-/// we generate a key and store it in a local file (less secure, but functional).
+///
+/// **Design**: keyring is the primary store (Windows Credential Manager,
+/// macOS Keychain, Linux Secret Service).  Only if keyring `set_password`
+/// fails do we fall back to a local file `.encryption_key` with restrictive
+/// Unix permissions (0o600).  The file fallback is less secure because the
+/// key lives on disk in the clear, so we emit a warning when it is used.
 fn get_or_create_encryption_key(app_handle: &tauri::AppHandle) -> Result<[u8; 32], String> {
-    // Try to get from keyring first
+    // 1. Try to get existing key from keyring (preferred)
     if let Ok(entry) = Entry::new(KEYRING_SERVICE_MASTER, KEYRING_USERNAME_MASTER) {
         if let Ok(key_b64) = entry.get_password() {
             if let Ok(key_bytes) = general_purpose::STANDARD.decode(&key_b64) {
@@ -100,7 +104,7 @@ fn get_or_create_encryption_key(app_handle: &tauri::AppHandle) -> Result<[u8; 32
         }
     }
 
-    // Key not in keyring - check file fallback
+    // 2. Key not in keyring — check file fallback
     let config_dir = get_config_directory(app_handle)?;
     let key_file = config_dir.join(".encryption_key");
     
@@ -110,10 +114,16 @@ fn get_or_create_encryption_key(app_handle: &tauri::AppHandle) -> Result<[u8; 32
                 if key_bytes.len() == 32 {
                     let mut key = [0u8; 32];
                     key.copy_from_slice(&key_bytes);
-                    // Try to migrate to keyring
+                    // Try to migrate into keyring so future reads can skip the file
                     let key_b64 = general_purpose::STANDARD.encode(&key);
                     if let Ok(entry) = Entry::new(KEYRING_SERVICE_MASTER, KEYRING_USERNAME_MASTER) {
                         let _ = entry.set_password(&key_b64);
+                    }
+                    // Ensure restrictive permissions even on pre-existing file
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600));
                     }
                     return Ok(key);
                 }
@@ -121,19 +131,33 @@ fn get_or_create_encryption_key(app_handle: &tauri::AppHandle) -> Result<[u8; 32
         }
     }
 
-    // Generate new key
+    // 3. No key exists — generate a new one
     let mut key = [0u8; 32];
     rand::thread_rng().fill(&mut key);
     let key_b64 = general_purpose::STANDARD.encode(&key);
     
-    // Try to store in keyring
-    if let Ok(entry) = Entry::new(KEYRING_SERVICE_MASTER, KEYRING_USERNAME_MASTER) {
-        let _ = entry.set_password(&key_b64);
-    }
+    // Try to store in keyring first
+    let keyring_ok = match Entry::new(KEYRING_SERVICE_MASTER, KEYRING_USERNAME_MASTER) {
+        Ok(entry) => entry.set_password(&key_b64).is_ok(),
+        Err(_) => false,
+    };
     
-    // Fallback: store in file
-    if let Err(e) = fs::write(&key_file, &key_b64) {
-        return Err(format!("Failed to store encryption key: {}", e));
+    if !keyring_ok {
+        // Keyring unavailable — fall back to file with restrictive permissions
+        eprintln!("WARNING: OS keyring unavailable. Storing encryption key in file fallback ({}). This is less secure.", key_file.display());
+        println!("WARNING: OS keyring unavailable — using .encryption_key file fallback (less secure)");
+        
+        fs::write(&key_file, &key_b64)
+            .map_err(|e| format!("Failed to store encryption key: {}", e))?;
+        
+        // Set restrictive permissions on Unix (owner read/write only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) = fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600)) {
+                eprintln!("WARNING: Could not set restrictive permissions on {}: {}", key_file.display(), e);
+            }
+        }
     }
     
     Ok(key)
@@ -1355,129 +1379,67 @@ async fn install_transcription_dependencies(app_handle: tauri::AppHandle) -> Res
 }
 
 #[tauri::command]
-async fn install_system_dependencies(app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    use std::process::Command;
-
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
-    let log_path = app_data_dir.join("transcription_install.log");
-    fn append_to_log(path: &std::path::PathBuf, msg: &str) {
-        use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = f.write_all(msg.as_bytes());
-            let _ = f.write_all(b"\n");
-        }
-    }
-
-    append_to_log(&log_path, "Starting system dependency installer (best-effort)");
-
-    let mut results = serde_json::Map::new();
-
-    if cfg!(windows) {
-        // Try winget first
-        append_to_log(&log_path, "Windows detected: trying winget to install Python and ffmpeg");
-        let mut cmd_w_py = Command::new("winget");
-        cmd_w_py.args(&["install", "--id", "Python.Python.3", "-e", "--silent"]);
-        hide_console(&mut cmd_w_py);
-        let winget_py = cmd_w_py.status();
-        append_to_log(&log_path, &format!("winget python status: {:?}", winget_py));
-        let mut cmd_w_ff = Command::new("winget");
-        cmd_w_ff.args(&["install", "--id", "Gyan.FFmpeg", "-e", "--silent"]);
-        hide_console(&mut cmd_w_ff);
-        let winget_ff = cmd_w_ff.status();
-        append_to_log(&log_path, &format!("winget ffmpeg status: {:?}", winget_ff));
-
-        // Fallback to choco if winget not present
-        let mut cmd_ch_py = Command::new("choco");
-        cmd_ch_py.args(&["install", "python", "-y"]);
-        hide_console(&mut cmd_ch_py);
-        let choco_py = cmd_ch_py.status();
-        append_to_log(&log_path, &format!("choco python status: {:?}", choco_py));
-        let mut cmd_ch_ff = Command::new("choco");
-        cmd_ch_ff.args(&["install", "ffmpeg", "-y"]);
-        hide_console(&mut cmd_ch_ff);
-        let choco_ff = cmd_ch_ff.status();
-        append_to_log(&log_path, &format!("choco ffmpeg status: {:?}", choco_ff));
-
-        // Installer cannot reliably install Visual C++ redistributable automatically; link user instead
-        results.insert("python_attempted".to_string(), serde_json::Value::Bool(true));
-        results.insert("ffmpeg_attempted".to_string(), serde_json::Value::Bool(true));
-        results.insert("vcruntime_note".to_string(), serde_json::Value::String("Install Visual C++ Redistributable manually from Microsoft if needed".to_string()));
+async fn install_system_dependencies(_app_handle: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    // This command no longer executes package managers (apt, brew, winget, etc.).
+    // It returns a structured JSON with manual install instructions per platform.
+    let instructions: serde_json::Value = if cfg!(windows) {
+        serde_json::json!({
+            "status": "instructions",
+            "message": "Please install the following manually:",
+            "packages": [
+                {"name": "Python 3.12+", "url": "https://www.python.org/downloads/", "note": "Required for transcription AI"},
+                {"name": "FFmpeg", "url": "https://ffmpeg.org/download.html", "note": "Required for audio processing"},
+                {"name": "Visual C++ Redistributable", "url": "https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist", "note": "Needed for Python C-extension wheels"},
+                {"name": "Git", "url": "https://git-scm.com/download/win", "note": "Required for git sync"}
+            ]
+        })
     } else if cfg!(target_os = "macos") {
-        append_to_log(&log_path, "macOS detected: trying brew to install python and ffmpeg");
-        let mut cmd_brew_py = Command::new("brew");
-        cmd_brew_py.args(&["install", "python"]);
-        hide_console(&mut cmd_brew_py);
-        let brew_py = cmd_brew_py.status();
-        append_to_log(&log_path, &format!("brew python status: {:?}", brew_py));
-        let mut cmd_brew_ff = Command::new("brew");
-        cmd_brew_ff.args(&["install", "ffmpeg"]);
-        hide_console(&mut cmd_brew_ff);
-        let brew_ff = cmd_brew_ff.status();
-        append_to_log(&log_path, &format!("brew ffmpeg status: {:?}", brew_ff));
-        results.insert("python_attempted".to_string(), serde_json::Value::Bool(true));
-        results.insert("ffmpeg_attempted".to_string(), serde_json::Value::Bool(true));
+        serde_json::json!({
+            "status": "instructions",
+            "message": "Run these commands in Terminal:",
+            "packages": [
+                {"name": "Python 3", "command": "brew install python", "note": "Required for transcription AI"},
+                {"name": "FFmpeg", "command": "brew install ffmpeg", "note": "Required for audio processing"},
+                {"name": "Git", "command": "brew install git", "note": "Required for git sync"}
+            ]
+        })
     } else {
-        // Assume linux
-        append_to_log(&log_path, "Linux detected: trying apt/dnf/pacman to install python3 and ffmpeg");
-        let mut cmd_apt = Command::new("sh");
-        cmd_apt.args(&["-c", "apt-get update && apt-get install -y python3 python3-pip ffmpeg"]);
-        hide_console(&mut cmd_apt);
-        let apt_update = cmd_apt.status();
-        append_to_log(&log_path, &format!("apt status: {:?}", apt_update));
-        let mut cmd_dnf = Command::new("sh");
-        cmd_dnf.args(&["-c", "dnf install -y python3 python3-pip ffmpeg"]);
-        hide_console(&mut cmd_dnf);
-        let dnf = cmd_dnf.status();
-        append_to_log(&log_path, &format!("dnf status: {:?}", dnf));
-        let mut cmd_pac = Command::new("sh");
-        cmd_pac.args(&["-c", "pacman -S --noconfirm python python-pip ffmpeg"]);
-        hide_console(&mut cmd_pac);
-        let pacman = cmd_pac.status();
-        append_to_log(&log_path, &format!("pacman status: {:?}", pacman));
-        results.insert("python_attempted".to_string(), serde_json::Value::Bool(true));
-        results.insert("ffmpeg_attempted".to_string(), serde_json::Value::Bool(true));
-    }
-
-    append_to_log(&log_path, "System dependency installer finished (check OS package manager output above)");
-
-    // Try installing Rust toolchain if pip builds require it
-    append_to_log(&log_path, "Checking Rust toolchain (needed for building some Python wheels)...");
-    let mut need_rust = true;
-    let mut cmd_rustc = Command::new("rustc");
-    cmd_rustc.arg("--version");
-    hide_console(&mut cmd_rustc);
-    if let Ok(status) = cmd_rustc.status() {
-        if status.success() { need_rust = false; }
-    }
-    if need_rust {
-        append_to_log(&log_path, "Rust not found - attempting to install rust toolchain...");
-        if cfg!(windows) {
-            let mut cmd_r = Command::new("winget");
-            cmd_r.args(&["install", "--id", "RustLang.Rust", "-e", "--silent"]);
-            hide_console(&mut cmd_r);
-            let r = cmd_r.status();
-            append_to_log(&log_path, &format!("winget rust status: {:?}", r));
-        } else if cfg!(target_os = "macos") {
-            let mut cmd_r = Command::new("brew");
-            cmd_r.args(&["install", "rust"]);
-            hide_console(&mut cmd_r);
-            let r = cmd_r.status();
-            append_to_log(&log_path, &format!("brew rust status: {:?}", r));
-        } else {
-            let mut cmd_r = Command::new("sh");
-            cmd_r.args(&["-c", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"]);
-            hide_console(&mut cmd_r);
-            let r = cmd_r.status();
-            append_to_log(&log_path, &format!("rustup install status: {:?}", r));
-        }
-    } else {
-        append_to_log(&log_path, "Rust toolchain already present");
-    }
-
-    Ok(serde_json::Value::Object(results))
+        // Linux — provide per-package-manager commands
+        serde_json::json!({
+            "status": "instructions",
+            "message": "Use your distribution's package manager:",
+            "packages": [
+                {
+                    "name": "python3 + pip",
+                    "commands": {
+                        "apt": "sudo apt install python3 python3-pip",
+                        "dnf": "sudo dnf install python3 python3-pip",
+                        "pacman": "sudo pacman -S python python-pip"
+                    },
+                    "note": "Required for transcription AI"
+                },
+                {
+                    "name": "ffmpeg",
+                    "commands": {
+                        "apt": "sudo apt install ffmpeg",
+                        "dnf": "sudo dnf install ffmpeg",
+                        "pacman": "sudo pacman -S ffmpeg"
+                    },
+                    "note": "Required for audio processing"
+                },
+                {
+                    "name": "git",
+                    "commands": {
+                        "apt": "sudo apt install git",
+                        "dnf": "sudo dnf install git",
+                        "pacman": "sudo pacman -S git"
+                    },
+                    "note": "Required for git sync"
+                }
+            ]
+        })
+    };
+    Ok(instructions)
 }
 
 #[tauri::command]
@@ -1662,5 +1624,61 @@ async fn read_install_log(app_handle: tauri::AppHandle) -> Result<String, String
         std::fs::read_to_string(&log_path).map_err(|e| format!("Failed to read log file: {}", e))
     } else {
         Ok(String::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_id_valid_uuid() {
+        assert!(is_safe_id("550e8400-e29b-41d4-a716-446655440000"));
+        assert!(require_safe_id("550e8400-e29b-41d4-a716-446655440000").is_ok());
+    }
+
+    #[test]
+    fn safe_id_plain_alphanumeric() {
+        assert!(is_safe_id("note123"));
+        assert!(is_safe_id("my_folder_2024"));
+        assert!(is_safe_id("abc-def_ghi"));
+    }
+
+    #[test]
+    fn safe_id_rejects_empty() {
+        assert!(!is_safe_id(""));
+        assert!(require_safe_id("").is_err());
+    }
+
+    #[test]
+    fn safe_id_rejects_parent_traversal() {
+        assert!(!is_safe_id("../etc/passwd"));
+        assert!(!is_safe_id(".."));
+        assert!(!is_safe_id("foo/../bar"));
+    }
+
+    #[test]
+    fn safe_id_rejects_path_separators() {
+        assert!(!is_safe_id("a/b"));
+        assert!(!is_safe_id("a\\b"));
+        assert!(!is_safe_id("folder/note"));
+    }
+
+    #[test]
+    fn safe_id_rejects_too_long() {
+        let long_id = "a".repeat(129);
+        assert!(!is_safe_id(&long_id));
+        // 128 chars is the max
+        let max_id = "a".repeat(128);
+        assert!(is_safe_id(&max_id));
+    }
+
+    #[test]
+    fn safe_id_rejects_unicode_and_special_chars() {
+        assert!(!is_safe_id("héllo"));
+        assert!(!is_safe_id("note name"));
+        assert!(!is_safe_id("note.name"));
+        assert!(!is_safe_id("note$name"));
+        assert!(!is_safe_id("<script>"));
     }
 }

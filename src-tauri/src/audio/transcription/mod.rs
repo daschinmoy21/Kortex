@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::{path::BaseDirectory, AppHandle, Manager};
 
@@ -61,7 +61,67 @@ fn get_python_executable(venv_path: &PathBuf) -> (PathBuf, bool) {
     (python_path, false)
 }
 
+/// Validate a WAV file path for safe use with the transcription subprocess.
+/// Rejects relative paths, parent-traversal, non-.wav extensions, and
+/// paths that aren't under the app data directory (unless allowlisted).
+fn validate_wav_path(wav_path: &str, app_handle: &AppHandle) -> Result<(), String> {
+    if wav_path.is_empty() {
+        return Err("WAV path is empty".to_string());
+    }
+
+    // Reject parent traversal
+    if wav_path.contains("..") {
+        return Err(format!("WAV path contains '..' (path traversal rejected): {}", wav_path));
+    }
+
+    let path = Path::new(wav_path);
+
+    // Must be absolute
+    if !path.is_absolute() {
+        return Err(format!("WAV path must be absolute: {}", wav_path));
+    }
+
+    // Must have .wav / .WAV extension
+    let valid_extension = path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.eq_ignore_ascii_case("wav"))
+        .unwrap_or(false);
+    if !valid_extension {
+        return Err(format!("WAV path must end in .wav or .WAV: {}", wav_path));
+    }
+
+    // Allow paths under the app data/temp directory
+    if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+        if path.starts_with(&app_data_dir) {
+            return Ok(());
+        }
+    }
+
+    // Also allow standard temp directories
+    let temp_dir = std::env::temp_dir();
+    if path.starts_with(&temp_dir) {
+        return Ok(());
+    }
+
+    // Reject — path is not in an expected location
+    Err(format!("WAV path is outside allowed directories (app data or temp): {}", wav_path))
+}
+
+/// Validate that the transcription script path exists and is a regular file.
+fn validate_script_path(script_path: &Path) -> Result<(), String> {
+    if !script_path.exists() {
+        return Err(format!("Transcription script not found: {}", script_path.display()));
+    }
+    if !script_path.is_file() {
+        return Err(format!("Transcription script path is not a file: {}", script_path.display()));
+    }
+    Ok(())
+}
+
 pub fn transcribe(app_handle: &AppHandle, wav_path: &str) -> Result<String, String> {
+    // --- security: validate WAV path before touching the filesystem ---
+    validate_wav_path(wav_path, app_handle)?;
+
     let app_data_dir = app_handle.path().app_data_dir().unwrap();
     let venv_path = app_data_dir.join("transcription_venv");
     let (python_path, is_system_python) = get_python_executable(&venv_path);
@@ -80,22 +140,22 @@ pub fn transcribe(app_handle: &AppHandle, wav_path: &str) -> Result<String, Stri
         app_handle.path().resolve("src/audio/transcription/transcribe.py", BaseDirectory::Resource)
            .map_err(|e| format!("Failed to resolve transcribe.py: {}", e))?
     };
-    
-    if !script_path.exists() {
-        return Err(format!("Transcription script not found at {:?}", script_path));
-    }
+
+    // --- security: validate script path before execution ---
+    validate_script_path(&script_path)?;
 
     // Run transcription script
     // usage: python transcribe.py <wav_path>
-    // It prints JSON to stdout
-    
+    // It prints JSON to stdout.
+    // argv form (Command::arg) — never passes unsanitized strings to a shell.
+
     // Hide console on Windows
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
     let mut cmd = Command::new(&python_path);
     cmd.arg(&script_path).arg(wav_path);
-    
+
     #[cfg(windows)]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
