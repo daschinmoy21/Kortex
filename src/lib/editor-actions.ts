@@ -6,6 +6,8 @@
  * content sanitization, and proper node construction.
  */
 
+const devLog = (...args: unknown[]) => { if (import.meta.env.DEV) console.log(...args); };
+
 export interface EditorAction {
     type: "editor_action";
     action: "insertText" | "insertCode" | "insertHeading" | "insertParagraph" |
@@ -106,7 +108,7 @@ export const handleAiAction = async (editor: any, action: EditorAction) => {
         throw new Error("Editor not connected");
     }
 
-    console.log("Executing AI Action:", JSON.stringify(action, null, 2));
+    devLog("Executing AI Action:", JSON.stringify(action, null, 2));
 
     try {
         switch (action.action) {
@@ -155,7 +157,7 @@ export const handleAiAction = async (editor: any, action: EditorAction) => {
                     }
                 }
         }
-        console.log("Successfully executed action");
+        devLog("Successfully executed action");
     } catch (error: any) {
         console.error("Failed to execute AI action:", error);
         // Provide more context in the error
@@ -303,7 +305,7 @@ const handleInsertTable = (editor: any, data: any) => {
  * Insert a list (bullet or numbered)
  */
 const handleInsertList = (editor: any, data: any) => {
-    console.log("handleInsertList received data:", JSON.stringify(data, null, 2));
+    devLog("handleInsertList received data:", JSON.stringify(data, null, 2));
 
     // Get items - support multiple formats from AI
     let items: string[] = [];
@@ -313,21 +315,21 @@ const handleInsertList = (editor: any, data: any) => {
         items = data.items.map((item: any) =>
             typeof item === "string" ? item : extractPlainText(item)
         ).filter((item: string) => item.length > 0);
-        console.log("Parsed from items array:", items);
+        devLog("Parsed from items array:", items);
     }
     // Format 2: { text: "- item1\n- item2" } (markdown list)
     else if (data.text && typeof data.text === "string") {
         items = data.text.split('\n').map((line: string) =>
             line.replace(/^[\s]*[-*+•][\s]+/, '').replace(/^[\s]*\d+[.)]\s*/, '').trim()
         ).filter((item: string) => item.length > 0);
-        console.log("Parsed from text field:", items);
+        devLog("Parsed from text field:", items);
     }
     // Format 3: { content: [...] } (array of items)
     else if (data.content && Array.isArray(data.content)) {
         items = data.content.map((item: any) =>
             typeof item === "string" ? item : (item.text || extractPlainText(item))
         ).filter((item: string) => item.length > 0);
-        console.log("Parsed from content array:", items);
+        devLog("Parsed from content array:", items);
     }
 
     // Final fallback: if still no items, log warning
@@ -344,7 +346,7 @@ const handleInsertList = (editor: any, data: any) => {
         content: toInlineContentArray(item),
     }));
 
-    console.log("Creating list blocks:", JSON.stringify(blocks, null, 2));
+    devLog("Creating list blocks:", JSON.stringify(blocks, null, 2));
 
     const refBlockId = getInsertionBlockId(editor);
     if (refBlockId) {
@@ -387,7 +389,7 @@ const handleUpdate = (editor: any, data: any) => {
     if (newType) update.type = newType;
 
     editor.updateBlock(targetBlockId, update);
-    console.log(`Updated block ${targetBlockId}`);
+    devLog(`Updated block ${targetBlockId}`);
 };
 
 /**
@@ -412,7 +414,7 @@ const handleDelete = (editor: any, data: any) => {
     }
 
     editor.removeBlocks(idsToDelete);
-    console.log(`Deleted blocks: ${idsToDelete.join(", ")}`);
+    devLog(`Deleted blocks: ${idsToDelete.join(", ")}`);
 };
 
 /**
@@ -470,7 +472,7 @@ const handleReplace = (editor: any, data: any) => {
     }
 
     editor.replaceBlocks(idsToReplace, replacementBlocks);
-    console.log(`Replaced blocks: ${idsToReplace.join(", ")}`);
+    devLog(`Replaced blocks: ${idsToReplace.join(", ")}`);
 };
 
 // =============================================================================

@@ -1,3 +1,5 @@
+const devLog = (...args: unknown[]) => { if (import.meta.env.DEV) console.log(...args); };
+
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import toast from "react-hot-toast";
@@ -47,7 +49,7 @@ export const processTranscription = async ({
     }
 
     const toastId = toast.loading("🤖 Structuring with AI...");
-    console.log("Starting AI structuring...");
+    devLog("Starting AI structuring...");
 
     try {
         // 2. Initialize AI Model
@@ -113,7 +115,7 @@ RULES:
             prompt: transcriptionText,
         });
 
-        console.log("AI Generation result:", structuredJsonString);
+        devLog("AI Generation result:", structuredJsonString);
 
         // 5. Parse JSON
         const cleanJson = structuredJsonString

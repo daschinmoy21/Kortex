@@ -84,15 +84,19 @@ fn create_wav_header(data_size: u32, sample_rate: u32, channels: u16, bits_per_s
 
 #[cfg(target_os = "macos")]
 pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
     println!("Starting audio capture (screencapturekit)");
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Starting macOS audio capture with ScreenCaptureKit");
 
     match start_capture_inner(app_handle) {
         Ok(_) => {
+            #[cfg(debug_assertions)]
             eprintln!("[Logia DEBUG] Audio capture started successfully");
             Ok(())
         },
         Err(e) => {
+            #[cfg(debug_assertions)]
             eprintln!("[Logia ERROR] Failed to start audio capture: {}", e);
             Err(e)
         }
@@ -104,6 +108,7 @@ fn start_capture_inner(app_handle: &AppHandle) -> Result<(), String> {
     // 1. Setup Output File
     let output_base = generate_output_file(app_handle)?;
     let pcm_path = format!("{}.pcm", output_base);
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Output PCM file: {}", pcm_path);
     
     let file = File::create(&pcm_path).map_err(|e| format!("Failed to create PCM file: {}", e))?;
@@ -112,9 +117,11 @@ fn start_capture_inner(app_handle: &AppHandle) -> Result<(), String> {
 
     // 2. Setup ScreenCaptureKit
     // Create a filter for the main display
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Getting shareable content...");
     let content = SCShareableContent::get().map_err(|e| {
         let err_str = format!("{:?}", e);
+        #[cfg(debug_assertions)]
         eprintln!("[Logia ERROR] SCShareableContent::get() failed: {}", err_str);
         if err_str.contains("user declined TCCs") || err_str.contains("NoShareableContent") {
             "PERMISSION_DENIED: Please enable Screen Recording permission for Logia in System Settings > Privacy & Security.".to_string()
@@ -124,6 +131,7 @@ fn start_capture_inner(app_handle: &AppHandle) -> Result<(), String> {
     })?;
     
     let displays = content.displays();
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Found {} displays", displays.len());
     
     let display = displays.into_iter().next().ok_or("No display found")?;
@@ -153,11 +161,14 @@ fn start_capture_inner(app_handle: &AppHandle) -> Result<(), String> {
     let mut stream = SCStream::new(&filter, &config);
     stream.add_output_handler(recorder, SCStreamOutputType::Audio);
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Starting capture stream...");
     stream.start_capture().map_err(|e| {
+        #[cfg(debug_assertions)]
         eprintln!("[Logia ERROR] stream.start_capture() failed: {:?}", e);
         format!("Failed to start capture: {:?}", e)
     })?;
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Capture stream started");
 
     // Store state
@@ -179,6 +190,7 @@ pub fn start_capture(_app_handle: &AppHandle) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 pub fn stop_capture() -> Result<String, String> {
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Stopping audio capture...");
     
     let state_mutex = CAPTURE_STREAM.get().ok_or("Capture not started")?;
@@ -186,9 +198,11 @@ pub fn stop_capture() -> Result<String, String> {
 
     if let Some(stream) = guard.take() {
         stream.stop_capture().map_err(|e| {
+            #[cfg(debug_assertions)]
             eprintln!("[Logia ERROR] stop_capture() failed: {:?}", e);
             format!("Failed to stop capture: {:?}", e)
         })?;
+        #[cfg(debug_assertions)]
         eprintln!("[Logia DEBUG] Capture stream stopped");
     } else {
         return Err("Capture not running".to_string());
@@ -202,6 +216,7 @@ pub fn stop_capture() -> Result<String, String> {
     let pcm_path = format!("{}.pcm", output_base);
     let wav_path = format!("{}.wav", output_base);
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Converting PCM to WAV: {} -> {}", pcm_path, wav_path);
 
     // Read PCM data
@@ -209,6 +224,7 @@ pub fn stop_capture() -> Result<String, String> {
     let mut pcm_data = Vec::new();
     pcm_file.read_to_end(&mut pcm_data).map_err(|e| format!("Failed to read PCM: {}", e))?;
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Read {} bytes of PCM data", pcm_data.len());
 
     if pcm_data.is_empty() {
@@ -233,6 +249,7 @@ pub fn stop_capture() -> Result<String, String> {
         int16_data.extend_from_slice(&int16_sample.to_le_bytes());
     }
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Converted to {} bytes of 16-bit PCM", int16_data.len());
 
     // Create WAV file with appropriate header
@@ -246,6 +263,7 @@ pub fn stop_capture() -> Result<String, String> {
     // Clean up PCM file
     let _ = std::fs::remove_file(&pcm_path);
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] WAV file created successfully: {}", wav_path);
 
     Ok(wav_path)

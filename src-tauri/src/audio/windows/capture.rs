@@ -32,15 +32,19 @@ fn generate_output_file(app_handle: &AppHandle) -> Result<String, String> {
 }
 
 pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
     println!("Starting audio capture on Windows");
 
     if let Ok(app_data_dir) = app_handle.path().app_data_dir() {
+        #[cfg(debug_assertions)]
         println!("App data dir: {:?}", app_data_dir);
     } else {
+        #[cfg(debug_assertions)]
         println!("App data dir not available");
     }
 
     let output_file = generate_output_file(app_handle)?;
+    #[cfg(debug_assertions)]
     println!("Output file: {}", output_file);
  
     // Manually resolve the bundled binary path
@@ -51,6 +55,7 @@ pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
          return Err(format!("Audio capture binary not found at: {:?}", sidecar_path));
     }
 
+    #[cfg(debug_assertions)]
     println!("Launching AudioCapture binary from: {:?}", sidecar_path);
 
     let mut cmd = Command::new(sidecar_path);
@@ -163,6 +168,7 @@ pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Mutex error: {e}"))?
         .replace(output_file);
 
+    #[cfg(debug_assertions)]
     println!("Started audio capture process for Windows");
     Ok(())
 }
