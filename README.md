@@ -15,7 +15,7 @@ Logia blends structured text editing with infinite visual canvases, ensuring you
 - **Audio Recording & Transcription**: Record and transcribe audio content directly in your notes.
 - **File Management**: Hierarchical file tree with drag-and-drop organization.
 - **Trash & Recovery**: Safely delete notes and folders with a 14-day recovery window.
-- **Cloud Sync**: Optional Google Drive synchronization for backup and cross-device access (BYO Credentials).
+- **Git Sync**: Optional git-based synchronization — connect any git remote to backup and sync your notes.
 - **Search & Discovery**: Fast, fuzzy search across all your notes.
 - **Kanban Boards**: Organize your tasks and workflows with visual boards.
 - **Cross-Platform**: Native desktop app for Windows, macOS, and Linux.
@@ -88,29 +88,17 @@ nix profile install github:daschinmoy21/Logia
    ];
    ```
 
-#### Google Drive Sync (Optional)
+#### Git Sync
 
-To enable Google Drive sync, you need to provide your own Google OAuth credentials. The Logia package accepts `googleClientId` and `googleClientSecret` parameters:
+Logia uses git for note synchronization. To enable sync:
 
-1. Get OAuth credentials from [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+1. Create a private git repository (GitHub, GitLab, etc.)
+2. Open Logia Settings → Git Sync
+3. Enter your remote URL (e.g., `git@github.com:user/logia-notes.git`) and branch name
+4. Click **Connect Remote**
+5. Use **Sync Now** to push/pull changes
 
-2. Create secrets files (store these securely, outside your git repo):
-   ```bash
-   mkdir -p ~/.config/logia-secrets
-   echo "YOUR_CLIENT_ID" > ~/.config/logia-secrets/google-client-id
-   echo "YOUR_CLIENT_SECRET" > ~/.config/logia-secrets/google-client-secret
-   ```
-
-3. Update your NixOS config to pass credentials:
-   ```nix
-   # In your flake.nix specialArgs or where you define packages:
-   logia = inputs.logia.packages.${system}.logia {
-     googleClientId = builtins.readFile /home/YOUR_USERNAME/.config/logia-secrets/google-client-id;
-     googleClientSecret = builtins.readFile /home/YOUR_USERNAME/.config/logia-secrets/google-client-secret;
-   };
-   ```
-
-> **Note**: The `default` package builds without credentials (Google Drive sync disabled). Use the `logia { ... }` function to pass your own credentials.
+**Authentication**: Logia uses your system's git credentials — SSH keys, `gh auth`, or git credential helper. No cloud OAuth tokens are stored.
 
 **Development shell:**
 ```bash
@@ -126,17 +114,34 @@ bun tauri dev
 - **Drawing**: Click the drawing tool to open the infinite canvas for visual notes.
 - **Recording**: Use the recording feature to capture audio and automatically transcribe it.
 - **Search**: Press `Alt+P` or `Meta/Cmd+P` (Mac) to open the command palette and search across all content.
-- **Sync**: If configured, sync your notes to Google Drive via the Settings menu.
+- **Sync**: Configure a git remote in Settings and use Sync Now to push/pull your notes.
 
 ## Configuration
 
-Create a `.env` file in the root directory with your API keys:
+### Google AI API Key
 
-```env
-OPENAI_API_KEY=your_openai_key
-GROQ_API_KEY=your_groq_key
-GOOGLE_GENRATIVE_AI_API_KEY=your_google_key
-```
+Logia uses Google Generative AI for intelligent note generation and editing. To enable AI features:
+
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/apikey)
+2. Open Logia and go to **Settings**
+3. Enter your API key under the **Google AI** section
+4. The key is stored securely via the system keyring / encrypted config — no `.env` files needed
+
+> **Note**: Logia no longer requires Google OAuth. Only an API key is needed.
+
+### Git Sync
+
+1. Create a **private** git repository (GitHub, GitLab, etc.)
+2. Open Logia → **Settings** → **Git Sync**
+3. Paste your remote URL (e.g., `git@github.com:user/logia-notes.git`) and branch name
+4. Click **Connect Remote**, then use **Sync Now** to push/pull changes
+
+**Authentication**: Logia uses your system's git credentials — SSH keys, `gh auth`, or git credential helper. No OAuth tokens are stored.
+
+### Optional Dependencies
+
+- **git** — required for Git Sync
+- **Python 3.12+** and **FFmpeg** — required for audio transcription (the preflight check surfaces missing dependencies on first run)
 
 ## Development
 

@@ -14,16 +14,15 @@ use rand::Rng;
 use fs2::FileExt;
 
 mod audio;
-mod google_drive;
-mod sync_manifest;
+mod git_sync;
 
 /// Atomically write content to a file using a temporary file and rename.
 /// This prevents data loss during concurrent writes and is safe across filesystem operations.
 fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), String> {
-    let temp_path = path.with_extension("json.tmp");
+    let temp_path = path.with_extension("tmp");
     
     // Write to temp file first
-    let temp_file = std::fs::File::create(&temp_path)
+    let mut temp_file = std::fs::File::create(&temp_path)
         .map_err(|e| format!("Failed to create temp file: {}", e))?;
     
     // Get exclusive lock on temp file
@@ -31,7 +30,8 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), String
         .map_err(|e| format!("Failed to lock file: {}", e))?;
     
     // Write content
-    std::io::Write::write_all(&mut &temp_file, content.as_bytes())
+    use std::io::Write;
+    temp_file.write_all(content.as_bytes())
         .map_err(|e| format!("Failed to write to temp file: {}", e))?;
     
     // Sync to disk
@@ -41,12 +41,30 @@ fn atomic_write_file(path: &std::path::Path, content: &str) -> Result<(), String
     // Unlock (happens automatically when file is dropped, but explicit is clearer)
     temp_file.unlock()
         .map_err(|e| format!("Failed to unlock file: {}", e))?;
+    drop(temp_file);
     
     // Atomically rename temp to target (atomic on most filesystems)
     std::fs::rename(&temp_path, path)
         .map_err(|e| format!("Failed to rename temp file: {}", e))?;
     
     Ok(())
+}
+
+/// Validate that a user-supplied id is safe to use as a filename segment.
+/// Rejects path separators, parent traversal, and other unexpected characters.
+fn is_safe_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && !id.contains("..")
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+fn require_safe_id(id: &str) -> Result<(), String> {
+    if is_safe_id(id) {
+        Ok(())
+    } else {
+        Err(format!("Invalid id: contains disallowed characters or path components"))
+    }
 }
 
 // Hide console windows on Windows when spawning subprocesses
@@ -289,6 +307,7 @@ async fn create_note(
     title: String,
     note_type: String,
     folder_id: Option<String>,
+    content: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<Note, String> {
     let notes_dir = get_notes_directory(&app_handle)?;
@@ -298,7 +317,7 @@ async fn create_note(
     let note = Note {
         id: note_id.clone(),
         title: title.clone(),
-        content: String::new(),
+        content: content.unwrap_or_default(),
         created_at: now.clone(),
         updated_at: now,
         note_type,
@@ -310,7 +329,7 @@ async fn create_note(
     let note_json = serde_json::to_string_pretty(&note)
         .map_err(|e| format!("Failed to serialize note: {}", e))?;
 
-    atomic_write_file(&file_path, &note_json)?;;
+    atomic_write_file(&file_path, &note_json)?;
 
     Ok(note)
 }
@@ -342,6 +361,7 @@ async fn get_all_notes(app_handle: tauri::AppHandle) -> Result<Vec<Note>, String
 
 #[tauri::command]
 async fn save_note(note: Note, app_handle: tauri::AppHandle) -> Result<(), String> {
+    require_safe_id(&note.id)?;
     let notes_dir = get_notes_directory(&app_handle)?;
     let file_path = notes_dir.join(format!("{}.json", note.id));
 
@@ -351,13 +371,14 @@ async fn save_note(note: Note, app_handle: tauri::AppHandle) -> Result<(), Strin
     let note_json = serde_json::to_string_pretty(&updated_note)
         .map_err(|e| format!("Failed to serialize note: {}", e))?;
 
-    atomic_write_file(&file_path, &note_json)?;;
+    atomic_write_file(&file_path, &note_json)?;
 
     Ok(())
 }
 
 #[tauri::command]
 async fn toggle_star_note(note_id: String, app_handle: tauri::AppHandle) -> Result<bool, String> {
+    require_safe_id(&note_id)?;
     let notes_dir = get_notes_directory(&app_handle)?;
     let file_path = notes_dir.join(format!("{}.json", note_id));
     
@@ -374,13 +395,14 @@ async fn toggle_star_note(note_id: String, app_handle: tauri::AppHandle) -> Resu
     // Save the note
     let note_json = serde_json::to_string_pretty(&note)
         .map_err(|e| format!("Failed to serialize note: {}", e))?;
-    atomic_write_file(&file_path, &note_json)?;;
+    atomic_write_file(&file_path, &note_json)?;
     
     Ok(note.starred)
 }
 
 #[tauri::command]
 async fn delete_note(note_id: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    require_safe_id(&note_id)?;
     let notes_dir = get_notes_directory(&app_handle)?;
     let trash_dir = get_trash_directory(&app_handle)?;
     let source_path = notes_dir.join(format!("{}.json", note_id));
@@ -419,7 +441,7 @@ async fn create_folder(
     let folder_json = serde_json::to_string_pretty(&folder)
         .map_err(|e| format!("Failed to serialize folder: {}", e))?;
 
-    atomic_write_file(&file_path, &folder_json)?;;
+    atomic_write_file(&file_path, &folder_json)?;
 
     Ok(folder)
 }
@@ -451,6 +473,7 @@ async fn get_all_folders(app_handle: tauri::AppHandle) -> Result<Vec<Folder>, St
 
 #[tauri::command]
 async fn update_folder(folder: Folder, app_handle: tauri::AppHandle) -> Result<(), String> {
+    require_safe_id(&folder.id)?;
     let folders_dir = get_folders_directory(&app_handle)?;
     let file_path = folders_dir.join(format!("{}.json", folder.id));
 
@@ -460,19 +483,43 @@ async fn update_folder(folder: Folder, app_handle: tauri::AppHandle) -> Result<(
     let folder_json = serde_json::to_string_pretty(&updated_folder)
         .map_err(|e| format!("Failed to serialize folder: {}", e))?;
 
-    atomic_write_file(&file_path, &folder_json)?;;
+    atomic_write_file(&file_path, &folder_json)?;
 
     Ok(())
 }
 
 #[tauri::command]
 async fn delete_folder(folder_id: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    require_safe_id(&folder_id)?;
     let folders_dir = get_folders_directory(&app_handle)?;
+    let notes_dir = get_notes_directory(&app_handle)?;
     let trash_dir = get_trash_directory(&app_handle)?;
     let source_path = folders_dir.join(format!("{}.json", folder_id));
     let dest_path = trash_dir.join(format!("folder_{}.json", folder_id));
+
+    // Also trash notes that belong to this folder so they aren't orphaned on disk
+    // while disappearing from the UI (frontend filters them out of state).
+    if let Ok(entries) = fs::read_dir(&notes_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(note) = serde_json::from_str::<Note>(&content) {
+                    if note.folder_id.as_deref() == Some(folder_id.as_str()) {
+                        let note_trash = trash_dir.join(format!("note_{}.json", note.id));
+                        if fs::rename(&path, &note_trash).is_err() {
+                            let _ = fs::copy(&path, &note_trash);
+                            let _ = fs::remove_file(&path);
+                        }
+                    }
+                }
+            }
+        }
+    }
     
-    // Move to trash instead of deleting
+    // Move folder metadata to trash instead of deleting
     if let Err(_) = fs::rename(&source_path, &dest_path) {
         fs::copy(&source_path, &dest_path)
             .map_err(|e| format!("Failed to copy folder to trash: {}", e))?;
@@ -506,7 +553,7 @@ async fn save_kanban_data(tasks: Vec<KanbanTask>, app_handle: tauri::AppHandle) 
     let data_json = serde_json::to_string_pretty(&tasks)
         .map_err(|e| format!("Failed to serialize kanban data: {}", e))?;
 
-    fs::write(&file_path, data_json).map_err(|e| format!("Failed to write kanban data: {}", e))?;
+    atomic_write_file(&file_path, &data_json)?;
 
     Ok(())
 }
@@ -600,6 +647,7 @@ async fn empty_trash(app_handle: tauri::AppHandle) -> Result<usize, String> {
 
 #[tauri::command]
 async fn restore_from_trash(item_id: String, item_type: String, app_handle: tauri::AppHandle) -> Result<(), String> {
+    require_safe_id(&item_id)?;
     let trash_dir = get_trash_directory(&app_handle)?;
     
     let (trash_filename, dest_dir) = match item_type.as_str() {
@@ -619,6 +667,20 @@ async fn restore_from_trash(item_id: String, item_type: String, app_handle: taur
 
     if !source_path.exists() {
         return Err("Item not found in trash".to_string());
+    }
+
+    // Refuse to overwrite an existing live item (prevents silent data loss)
+    if dest_path.exists() {
+        return Err(format!(
+            "Cannot restore: a {} with this id already exists. Rename or delete the existing item first.",
+            item_type
+        ));
+    }
+
+    // Ensure destination directory exists
+    if !dest_dir.exists() {
+        fs::create_dir_all(&dest_dir)
+            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
     }
 
     // Move back from trash
@@ -703,7 +765,7 @@ async fn get_google_api_key(app_handle: tauri::AppHandle) -> Result<String, Stri
                     }
                 }
                 let content = serde_json::to_string_pretty(&updated_config).unwrap_or_default();
-                let _ = fs::write(&config_file, content);
+                let _ = atomic_write_file(&config_file, &content);
             }
 
             return Ok(plain_key.to_string());
@@ -741,7 +803,7 @@ async fn save_google_api_key(key: String, app_handle: tauri::AppHandle) -> Resul
         let content = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-        let _ = fs::write(&config_file, content);
+        let _ = atomic_write_file(&config_file, &content);
 
         // Also remove plain key from config.json if present
         // (already removed above)
@@ -773,8 +835,7 @@ async fn save_google_api_key(key: String, app_handle: tauri::AppHandle) -> Resul
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    fs::write(&config_file, content)
-        .map_err(|e| format!("Failed to write config file: {}", e))?;
+    atomic_write_file(&config_file, &content)?;
 
     Ok(())
 }
@@ -803,8 +864,7 @@ async fn remove_google_api_key(app_handle: tauri::AppHandle) -> Result<(), Strin
         let content = serde_json::to_string_pretty(&config)
             .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-        fs::write(&config_file, content)
-            .map_err(|e| format!("Failed to write config file: {}", e))?;
+        atomic_write_file(&config_file, &content)?;
     }
 
     Ok(())
@@ -1547,7 +1607,7 @@ pub fn run() {
     dotenvy::dotenv().ok();
 
     tauri::Builder::default()
-        .manage(google_drive::GoogleDriveState::new())
+        .manage(git_sync::GitSyncState::new())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1578,17 +1638,12 @@ pub fn run() {
             transcribe_audio,
             prereflight_check,
             read_install_log,
-            google_drive::connect_google_drive,
-            google_drive::get_google_drive_status,
-            google_drive::sync_notes_to_google_drive,
-            google_drive::sync_all_to_google_drive,
-            google_drive::cleanup_old_trash,
-            google_drive::check_sync_status,
-            google_drive::force_sync_from_cloud,
-            google_drive::force_sync_to_cloud,
-            google_drive::get_sync_plan,
-            google_drive::execute_sync_with_resolutions,
-            google_drive::disconnect_google_drive
+            git_sync::git_sync_status,
+            git_sync::git_sync_configure,
+            git_sync::git_sync_now,
+            git_sync::git_sync_force_pull,
+            git_sync::git_sync_force_push,
+            git_sync::git_sync_disconnect
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

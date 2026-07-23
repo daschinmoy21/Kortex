@@ -12,7 +12,7 @@ import {
   SettingsIcon,
   Layout,
   Home,
-  Cloud,
+  GitBranch,
   RotateCw,
   Github,
   Star,
@@ -77,7 +77,7 @@ export const Sidebar = () => {
   const isProcessingRecording = useUiStore(
     (state) => state.isProcessingRecording,
   );
-  const googleDriveConnected = useUiStore((state) => state.googleDriveConnected);
+  const gitSyncConfigured = useUiStore((state) => state.gitSyncConfigured);
   const isSyncing = useUiStore((state) => state.isSyncing);
 
   // Folder renaming state
@@ -421,8 +421,8 @@ export const Sidebar = () => {
             </div>
           </div>
 
-          {/* Sync Status (Visible only if connected) */}
-          {googleDriveConnected && (
+          {/* Git Sync Status (Visible only if configured) */}
+          {gitSyncConfigured && (
             <div className="px-3 py-2.5 mx-2 mb-2 rounded-lg bg-gradient-to-r from-zinc-800/50 to-emerald-900/20 border border-zinc-800/50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -433,8 +433,8 @@ export const Sidebar = () => {
                     </>
                   ) : (
                     <>
-                      <Cloud className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-xs font-medium bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">Synced</span>
+                      <GitBranch className="w-3.5 h-3.5 text-emerald-500" />
+                      <span className="text-xs font-medium bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">Git Sync</span>
                     </>
                   )}
                 </div>

@@ -35,13 +35,21 @@ dist-ssr
 src-tauri/src/audio/transcription/venv
 src-tauri/src/audio/transcription/transcription_venv
 
-# Binaries and Executors
+# Binaries and build artifacts (build via `bun run build:audio` on Windows)
 src-tauri/bin/*.exe
-src-tauri/bin/AudioCapture-x86_64-pc-windows-msvc.exe
-
-# C# Build Artifacts
+src-tauri/bin/*.pdb
+src-tauri/src/audio/windows/*.exe
+src-tauri/src/audio/windows/*.pdb
+src-tauri/src/audio/windows/*.dll
+src-tauri/src/audio/windows/*.bin
 src-tauri/src/audio/windows/bin/
 src-tauri/src/audio/windows/obj/
+
+# Local/temp artifacts (should never be committed)
+src-tauri/temp_audio.pcm
+src-tauri/test.pdf
+src-tauri/src/audio/windows/test.wav
+src-tauri/src/audio/windows/*.wav
 
 # AI Models
 src-tauri/src/audio/transcription/models/

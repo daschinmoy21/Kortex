@@ -76,7 +76,8 @@ export const useNotesStore = create<NotesState>()(
 
     createNote: async (noteType = 'text', folderId) => {
       try {
-        // Create initial content with a Heading 1 "Untitled"
+        // Create initial content with a Heading 1 "Untitled" in a single backend call
+        // (avoids a race between create_note + save_note)
         const initialContent = JSON.stringify([
           {
             id: crypto.randomUUID(),
@@ -87,27 +88,18 @@ export const useNotesStore = create<NotesState>()(
           }
         ]);
 
-        // Create note via Tauri backend
-        // We pass the initial content if the backend supports it, otherwise we might need to update it immediately.
-        // Assuming backend 'create_note' only takes title/type/folderId. 
-        // We will create it, then immediately update content if backend doesn't accept content in create_note.
-        // Checking backend signature would be good, but assuming standard create first.
-
-        // Actually, let's check if we can pass content. The Rust signature likely matches the JS invoke.
-        // If I can't pass content, I'll have to create then update.
-        // Let's assume for now we create with "Untitled" title, and then immediately save the content.
-
-        const newNote: Note = await invoke('create_note', { title: 'Untitled', noteType, folderId });
-
-        // Immediately update with initial content
-        const initializedNote = { ...newNote, content: initialContent };
-        await invoke('save_note', { note: initializedNote });
+        const newNote: Note = await invoke('create_note', {
+          title: 'Untitled',
+          noteType,
+          folderId,
+          content: initialContent,
+        });
 
         set((state) => ({
-          notes: [initializedNote, ...state.notes],
+          notes: [newNote, ...state.notes],
         }));
 
-        return initializedNote;
+        return newNote;
       } catch (error) {
         console.error('Failed to create note:', error);
         throw error;
