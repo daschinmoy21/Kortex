@@ -17,7 +17,7 @@ function Editor() {
     updateCurrentNoteContent,
     updateCurrentNoteTitle,
   } = useNotesStore();
-  const { googleApiKey } = useUiStore();
+  const { hasGoogleApiKey } = useUiStore();
 
   // Show empty state when no note is selected
   if (!currentNote) {
@@ -42,7 +42,7 @@ function Editor() {
   // Key based on API key + note ID ensures the editor remounts when:
   // 1. The user switches notes
   // 2. The user adds/removes/changes the API key (toggling AI features)
-  const editorKey = `${currentNote.id}-${googleApiKey ? 'ai' : 'no-ai'}`;
+  const editorKey = `${currentNote.id}-${hasGoogleApiKey ? 'ai' : 'no-ai'}`;
 
   return (
     <EditorProvider

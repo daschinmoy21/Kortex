@@ -1,6 +1,6 @@
 import { BlockNoteEditor, filterSuggestionItems } from "@blocknote/core";
 import { useCreateBlockNote } from "@blocknote/react";
-import { ReactNode, createContext, useContext, useRef, useMemo, useEffect } from "react";
+import { ReactNode, createContext, useContext, useRef, useMemo, useEffect, useState } from "react";
 import { codeBlock } from "@blocknote/code-block";
 import {
   createAIExtension,
@@ -72,18 +72,25 @@ export function EditorProvider({
   updateCurrentNoteContent: (content: string) => void;
   updateCurrentNoteTitle: (title: string) => void;
 }) {
-  const { googleApiKey, setEditor } = useUiStore();
+  const { ensureGoogleApiKey, hasGoogleApiKey, setEditor } = useUiStore();
+  const [resolvedKey, setResolvedKey] = useState<string>('');
 
-  // Create model only when API key changes
+  useEffect(() => {
+    if (hasGoogleApiKey) {
+      ensureGoogleApiKey().then(setResolvedKey);
+    }
+  }, [ensureGoogleApiKey, hasGoogleApiKey]);
+
+  // Create model only when API key becomes available
   const model = useMemo(() => {
-    if (googleApiKey) {
+    if (resolvedKey) {
       const googleAI = createGoogleGenerativeAI({
-        apiKey: googleApiKey,
+        apiKey: resolvedKey,
       });
       return googleAI('gemini-2.5-flash');
     }
     return null;
-  }, [googleApiKey]);
+  }, [resolvedKey]);
 
   const hasAI = Boolean(model);
 
@@ -233,7 +240,7 @@ export function FormattingToolbarWithAI() {
 
 // Slash menu with the AI option added
 export function SuggestionMenuWithAI({ editor }: { editor: BlockNoteEditor<any, any, any> }) {
-  const { googleApiKey } = useUiStore();
+  const { hasGoogleApiKey } = useUiStore();
 
   return (
     <SuggestionMenuController
@@ -243,7 +250,7 @@ export function SuggestionMenuWithAI({ editor }: { editor: BlockNoteEditor<any, 
           [
             ...getDefaultReactSlashMenuItems(editor),
             // add the default AI slash menu items only if API key is present
-            ...(googleApiKey ? getAISlashMenuItems(editor) : []),
+            ...(hasGoogleApiKey ? getAISlashMenuItems(editor) : []),
           ],
           query,
         )

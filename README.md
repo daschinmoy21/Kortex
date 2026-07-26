@@ -32,27 +32,32 @@ Logia blends structured text editing with infinite visual canvases, ensuring you
 ### Setup
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/daschinmoy21/Logia.git
    cd logia
    ```
 
 2. Install dependencies:
+
    ```bash
    bun install
    ```
 
 3. Run in development mode:
+
    ```bash
    bun run tauri dev
    ```
 
 4. Build for production:
+
    ```bash
    bun tauri build
    ```
 
    > **Note for Linux Users**: There is a known issue with linuxdeploy in Tauri which may cause build errors with AppImage creation. usage:
+>
    > ```bash
    > NO_STRIP=true bun tauri build
    > ```
@@ -62,11 +67,13 @@ Logia blends structured text editing with infinite visual canvases, ensuring you
 Logia is available as a Nix flake for easy installation on NixOS or any system with Nix.
 
 **Run without installing:**
+
 ```bash
 nix run github:daschinmoy21/Logia
 ```
 
 **Install to user profile:**
+
 ```bash
 nix profile install github:daschinmoy21/Logia
 ```
@@ -74,6 +81,7 @@ nix profile install github:daschinmoy21/Logia
 **Add to NixOS configuration:**
 
 1. Add to your flake inputs:
+
    ```nix
    inputs.logia = {
      url = "github:daschinmoy21/Logia";
@@ -82,6 +90,7 @@ nix profile install github:daschinmoy21/Logia
    ```
 
 2. Pass it through `specialArgs` and use in your config:
+
    ```nix
    environment.systemPackages = [
      logia.packages.${pkgs.system}.default
@@ -101,6 +110,7 @@ Logia uses git for note synchronization. To enable sync:
 **Authentication**: Logia uses your system's git credentials — SSH keys, `gh auth`, or git credential helper. No cloud OAuth tokens are stored.
 
 **Development shell:**
+
 ```bash
 nix develop  # Enters a shell with all dependencies
 bun install
@@ -128,6 +138,10 @@ Logia uses Google Generative AI for intelligent note generation and editing. To 
 4. The key is stored securely via the system keyring / encrypted config — no `.env` files needed
 
 > **Note**: Logia no longer requires Google OAuth. Only an API key is needed.
+
+### Security / AI Keys
+
+Logia uses a **Bring Your Own Key (BYOK)** model. The API key is stored in the OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service) with an encrypted config file fallback — managed entirely in Rust. The key only enters the webview process when an AI feature is actively used (chat, slash-menu generation, or transcription structuring). Treat the machine as trusted; a full request-proxy through the Rust backend is a future hardening step.
 
 ### Git Sync
 
