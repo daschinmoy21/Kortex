@@ -45,7 +45,6 @@ export const Settings = () => {
   const [remoteUrl, setRemoteUrl] = useState('');
   const [branchName, setBranchName] = useState('main');
   const [gitStatus, setGitStatus] = useState<GitSyncStatus | null>(null);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (isSettingsOpen) {
@@ -162,7 +161,6 @@ export const Settings = () => {
       const result = await invoke<GitSyncResult>('git_sync_now');
       toast.success(result.message);
       setLastSyncedAt(new Date());
-      setSyncResult(result.message);
       await checkGitStatus();
       if (result.needs_reload) {
         const { loadNotes, loadFolders } = (await import('../store/notesStore')).useNotesStore.getState();

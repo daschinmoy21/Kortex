@@ -41,3 +41,5 @@ jobs:
           touch src-tauri/bin/AudioCapture-x86_64-pc-windows-msvc.exe
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml
