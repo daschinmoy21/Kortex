@@ -32,7 +32,7 @@ type Tab = "chat" | "calendar" | "tags";
 
 const AiSidebar = ({ isOpen, onClose: _onClose }: AiSidebarProps) => {
   const { currentNote } = useNotesStore();
-  const { googleApiKey } = useUiStore();
+  const { ensureGoogleApiKey, hasGoogleApiKey } = useUiStore();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
 
   // Chat State - includes actionStatus for persistence
@@ -42,7 +42,6 @@ const AiSidebar = ({ isOpen, onClose: _onClose }: AiSidebarProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState<string>("");
   const scrollableContainerRef = useRef<HTMLDivElement>(null);
-  const [googleClient, setGoogleClient] = useState<any>(null);
 
   // Calendar State
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -68,28 +67,33 @@ const AiSidebar = ({ isOpen, onClose: _onClose }: AiSidebarProps) => {
     }
   }, [messages, streamingMessage, activeTab]);
 
-  useEffect(() => {
-    if (!googleApiKey) {
-      setGoogleClient(null);
-      return;
-    }
-    try {
-      const client = createGoogleGenerativeAI({ apiKey: googleApiKey });
-      setGoogleClient(() => client);
-    } catch (e) {
-      console.error("Failed to create Google AI client", e);
-      setGoogleClient(null);
-    }
-  }, [googleApiKey]);
-
   const handleSendMessage = async (message: string) => {
     if (!message.trim()) return;
-    if (!googleApiKey || !googleClient) {
+    if (!hasGoogleApiKey) {
       toast.error("Google API key not configured.", {
         style: { background: "#333", color: "#fff" },
       });
       return;
     }
+
+    let key: string;
+    try {
+      key = await ensureGoogleApiKey();
+    } catch {
+      toast.error("Failed to load API key.", {
+        style: { background: "#333", color: "#fff" },
+      });
+      return;
+    }
+
+    if (!key) {
+      toast.error("Google API key not configured.", {
+        style: { background: "#333", color: "#fff" },
+      });
+      return;
+    }
+
+    const googleClient = createGoogleGenerativeAI({ apiKey: key });
     if (!currentNote) return;
 
     const userMessage = { role: "user" as const, content: message };

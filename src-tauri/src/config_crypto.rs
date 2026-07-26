@@ -183,6 +183,32 @@ const KEYRING_SERVICE: &str = "Logia";
 const KEYRING_USERNAME: &str = "google_api_key";
 
 #[tauri::command]
+pub async fn has_google_api_key(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    // Check keyring first
+    if try_get_keyring(KEYRING_SERVICE, KEYRING_USERNAME).is_some() {
+        return Ok(true);
+    }
+
+    // Check config.json for encrypted or legacy plain key
+    let config_dir = get_config_directory(&app_handle)?;
+    let config_file = config_dir.join("config.json");
+
+    if config_file.exists() {
+        if let Ok(content) = fs::read_to_string(&config_file) {
+            if let Ok(config) = serde_json::from_str::<serde_json::Value>(&content) {
+                if config.get("encrypted_google_api_key").is_some()
+                    || config.get("google_api_key").is_some()
+                {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}
+
+#[tauri::command]
 pub async fn get_google_api_key(app_handle: tauri::AppHandle) -> Result<String, String> {
     // Try keyring first (works on Windows Credential Manager, macOS Keychain, Linux Secret Service)
     if let Some(pw) = try_get_keyring(KEYRING_SERVICE, KEYRING_USERNAME) {

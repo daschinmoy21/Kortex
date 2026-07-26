@@ -546,7 +546,7 @@ export const Sidebar = () => {
                     }
 
                     // 3. Process with AI Utility
-                    const googleApiKey = useUiStore.getState().googleApiKey;
+                    const googleApiKey = await useUiStore.getState().ensureGoogleApiKey();
                     const editor = useUiStore.getState().editor; // Access editor instance
                     const currentContent =
                       JSON.parse(noteToUpdate.content || "[]") || [];

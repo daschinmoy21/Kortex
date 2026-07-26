@@ -30,6 +30,7 @@ interface UiState {
   isSidebarFloating: boolean;
   expandedFolders: Set<string>;
   googleApiKey: string;
+  hasGoogleApiKey: boolean;
   gitSyncConfigured: boolean;
   isSyncing: boolean; // [NEW]
   lastSyncedAt: Date | null; // [NEW]
@@ -56,6 +57,7 @@ interface UiState {
   setIsSidebarFloating: (isFloating: boolean) => void;
   setExpandedFolders: (folders: Set<string>) => void;
   setGoogleApiKey: (key: string) => void;
+  ensureGoogleApiKey: () => Promise<string>;
   setGitSyncConfigured: (configured: boolean) => void;
   setIsSyncing: (isSyncing: boolean) => void; // [NEW]
   setLastSyncedAt: (date: Date | null) => void; // [NEW]
@@ -92,13 +94,13 @@ const useUiStore = create<UiState>((set) => ({
   openCommandPalette: () => set({ isCommandPaletteOpen: true }),
   closeCommandPalette: () => set({ isCommandPaletteOpen: false, searchQuery: '', searchResults: [] }),
 
-  // Load API key on initialization
+  // Load API key existence on initialization (never the raw key)
   loadApiKey: async () => {
     try {
-      const key = await invoke<string>('get_google_api_key');
-      set({ googleApiKey: key });
+      const hasKey = await invoke<boolean>('has_google_api_key');
+      set({ hasGoogleApiKey: hasKey });
     } catch (error) {
-      console.error('Failed to load API key:', error);
+      console.error('Failed to check API key:', error);
     }
   },
 
@@ -116,6 +118,7 @@ const useUiStore = create<UiState>((set) => ({
   expandedFolders: new Set(),
   deleteConfirmFolderId: null,
   googleApiKey: '',
+  hasGoogleApiKey: false,
   gitSyncConfigured: false,
   isSyncing: false, // [NEW]
   lastSyncedAt: null, // [NEW]
@@ -147,7 +150,19 @@ const useUiStore = create<UiState>((set) => ({
   setIsAiSidebarOpen: (isOpen) => set({ isAiSidebarOpen: isOpen }),
   setIsSidebarFloating: (isFloating) => set({ isSidebarFloating: isFloating }),
   setExpandedFolders: (expandedFolders) => set({ expandedFolders }),
-  setGoogleApiKey: (key) => set({ googleApiKey: key }),
+  setGoogleApiKey: (key) => set({ googleApiKey: key, hasGoogleApiKey: !!key }),
+
+  ensureGoogleApiKey: async (): Promise<string> => {
+    const { googleApiKey } = useUiStore.getState();
+    if (googleApiKey) return googleApiKey;
+    try {
+      const key = await invoke<string>('get_google_api_key');
+      set({ googleApiKey: key, hasGoogleApiKey: !!key });
+      return key;
+    } catch {
+      return '';
+    }
+  },
   setGitSyncConfigured: (configured) => set({ gitSyncConfigured: configured }),
   setIsSyncing: (isSyncing) => set({ isSyncing }), // [NEW]
   setLastSyncedAt: (date) => set({ lastSyncedAt: date }), // [NEW]

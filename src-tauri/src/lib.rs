@@ -793,6 +793,7 @@ pub fn run() {
             empty_trash,
             restore_from_trash,
             get_google_api_key,
+            has_google_api_key,
             save_google_api_key,
             remove_google_api_key,
             install_transcription_dependencies,
