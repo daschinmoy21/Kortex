@@ -35,10 +35,6 @@ jobs:
             libappindicator3-dev \
             librsvg2-dev \
             patchelf
-      - name: Create dummy Windows resource
-        run: |
-          mkdir -p src-tauri/bin
-          touch src-tauri/bin/AudioCapture-x86_64-pc-windows-msvc.exe
       - name: Cargo check
         run: cargo check --manifest-path src-tauri/Cargo.toml
       - name: Cargo test
