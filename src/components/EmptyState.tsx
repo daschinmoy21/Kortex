@@ -5,18 +5,6 @@ import toast from "react-hot-toast";
 import { invoke } from "@tauri-apps/api/core";
 import useUiStore from "../store/UiStore";
 
-interface GitSyncStatus {
-  configured: boolean;
-  remote_url: string | null;
-  branch: string;
-  dirty: boolean;
-  ahead: number;
-  behind: number;
-  last_sync: string | null;
-  git_available: boolean;
-  message: string;
-}
-
 interface GitSyncResult {
   message: string;
   needs_reload: boolean;
@@ -25,7 +13,7 @@ interface GitSyncResult {
 export function EmptyState() {
   const { createNote, notes } = useNotesStore();
   const recentNotes = notes.slice(0, 3);
-  const { gitSyncConfigured, setGitSyncConfigured, isSyncing, setIsSyncing, setLastSyncedAt } = useUiStore();
+  const { gitSyncConfigured, isSyncing, setIsSyncing, setLastSyncedAt } = useUiStore();
 
   const quickActions = [
     {
