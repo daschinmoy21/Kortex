@@ -43,8 +43,7 @@
     },
     "externalBin": [],
     "resources": [
-      "src/audio/transcription/*",
-      "bin/AudioCapture-x86_64-pc-windows-msvc.exe"
+      "src/audio/transcription/*"
     ]
   }
 }

@@ -67,13 +67,6 @@ jobs:
       - name: Install frontend deps
         run: bun install
 
-      # Create dummy resource for non-Windows (prevent build failure)
-      - name: Create dummy Windows resource
-        if: matrix.os != 'windows-latest'
-        run: |
-          mkdir -p src-tauri/bin
-          touch src-tauri/bin/AudioCapture-x86_64-pc-windows-msvc.exe
-
       # Build + Release
       - uses: tauri-apps/tauri-action@v0
         env:
