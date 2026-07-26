@@ -43,10 +43,7 @@ export function useEditorContext() {
   return context;
 }
 
-// Create provider with API key from environment variables
-// const provider = createGroq({
-//   apiKey: import.meta.env.VITE_GROQ_API_KEY,
-// // function to convert file to base64
+// function to convert file to base64
 const convertFileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     console.log("Starting base64 conversion for:", file.name, file.type, file.size);
