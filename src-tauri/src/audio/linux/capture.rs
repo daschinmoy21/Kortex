@@ -48,19 +48,25 @@ fn get_default_sink() -> Result<String, String> {
 }
 
 pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
+    #[cfg(debug_assertions)]
     println!("Starting audio capture on Linux");
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Starting audio capture on Linux");
     
     let default_sink = get_default_sink().map_err(|e| {
+        #[cfg(debug_assertions)]
         eprintln!("[Logia ERROR] Failed to get default sink: {}", e);
         e
     })?;
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Got default sink: {}", default_sink);
     
     let monitor_name = format!("{}.monitor", default_sink);
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Monitor name: {}", monitor_name);
     
     let output_file = generate_output_file(app_handle)?;
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Output file: {}", output_file);
 
     let mut cmd = Command::new("ffmpeg");
@@ -82,10 +88,12 @@ pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
     let child = cmd
         .spawn()
         .map_err(|e| {
+            #[cfg(debug_assertions)]
             eprintln!("[Logia ERROR] Failed to start ffmpeg: {}", e);
             format!("Failed to start FFMPEG:{}", e)
         })?;
     
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] ffmpeg spawned with PID: {}", child.id());
 
     let process_mutex = CAPTURE_PROCESS.get_or_init(|| Mutex::new(None));
@@ -100,7 +108,9 @@ pub fn start_capture(app_handle: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Mutex error:{}", e))?;
     *file_guard = Some(output_file.clone());
 
+    #[cfg(debug_assertions)]
     println!("Capturing audio from '{}' to {}", monitor_name, output_file);
+    #[cfg(debug_assertions)]
     eprintln!("[Logia DEBUG] Capture started successfully");
     Ok(())
 }
@@ -129,6 +139,7 @@ pub fn stop_capture() -> Result<String, String> {
         child
             .wait()
             .map_err(|e| format!("Process wait failed:{}", e))?;
+        #[cfg(debug_assertions)]
         println!("Audio capture stopped");
     }
 
@@ -145,6 +156,7 @@ pub fn stop_capture() -> Result<String, String> {
 
 pub fn cleanup() -> Result<(), String> {
     stop_capture();
+    #[cfg(debug_assertions)]
     println!("Cleanup done");
     Ok(())
 }

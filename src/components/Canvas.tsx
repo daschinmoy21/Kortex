@@ -1,3 +1,5 @@
+const devLog = (...args: unknown[]) => { if (import.meta.env.DEV) console.log(...args); };
+
 import { useCallback, useRef } from 'react';
 import { Tldraw, setUserPreferences } from 'tldraw';
 import 'tldraw/tldraw.css';
@@ -8,7 +10,7 @@ function Canvas() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMount = useCallback((editor: any) => {
-    console.log('Tldraw editor mounted');
+    devLog('Tldraw editor mounted');
 
     // Set dark mode
     setUserPreferences({ id: 'logia-user', colorScheme: 'dark' });
@@ -17,7 +19,7 @@ function Canvas() {
       try {
         const snapshot = JSON.parse(currentNote.content);
         editor.loadSnapshot(snapshot);
-        console.log('Loaded snapshot from backend');
+        devLog('Loaded snapshot from backend');
       } catch (e) {
         console.error('Failed to parse backend content', e);
       }

@@ -1,3 +1,5 @@
+const devLog = (...args: unknown[]) => { if (import.meta.env.DEV) console.log(...args); };
+
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Resizable } from "re-resizable";
@@ -156,7 +158,7 @@ export const Sidebar = () => {
         await deleteFolder(deleteConfirmFolderId);
         setDeleteConfirmFolderId(null);
       } catch (error) {
-        console.log("Failed to delete folder", error);
+        console.error("Failed to delete folder", error);
       }
     }
   };
@@ -167,7 +169,7 @@ export const Sidebar = () => {
         await deleteNote(deleteConfirmId);
         setDeleteConfirmId(null);
       } catch (error) {
-        console.log("Failed to delete note", error);
+        console.error("Failed to delete note", error);
       }
     }
   };
@@ -311,7 +313,7 @@ export const Sidebar = () => {
 
             <button
               onClick={() => {
-                console.log("Opening Settings via Sidebar");
+                devLog("Opening Settings via Sidebar");
                 setIsSettingsOpen(true);
               }}
               className="w-full flex items-center gap-3 px-2 py-1.5 text-sm font-medium hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
@@ -497,11 +499,11 @@ export const Sidebar = () => {
 
                   try {
                     // 1. Stop recording and get transcript
-                    console.log("[Logia] Stopping recording...");
+                    devLog("[Logia] Stopping recording...");
                     let transcriptionResult: string;
                     try {
                       transcriptionResult = await invoke<string>("stop_recording");
-                      console.log("[Logia] stop_recording returned:", transcriptionResult);
+                      devLog("[Logia] stop_recording returned:", transcriptionResult);
                     } catch (stopErr) {
                       console.error("[Logia] stop_recording invoke failed:", stopErr);
                       throw new Error(`Stop recording failed: ${stopErr}`);
@@ -512,10 +514,10 @@ export const Sidebar = () => {
                     try {
                       const parsed = JSON.parse(transcriptionResult);
                       transcriptText = parsed.text || transcriptionResult;
-                      console.log("[Logia] Parsed transcript text:", transcriptText?.substring(0, 100));
+                      devLog("[Logia] Parsed transcript text:", transcriptText?.substring(0, 100));
                     } catch {
                       transcriptText = transcriptionResult;
-                      console.log("[Logia] Using raw transcript:", transcriptText?.substring(0, 100));
+                      devLog("[Logia] Using raw transcript:", transcriptText?.substring(0, 100));
                     }
 
                     if (!transcriptText || transcriptText.trim() === "") {

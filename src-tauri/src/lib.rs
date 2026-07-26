@@ -979,6 +979,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
     // Check if we are using system python override (e.g. NixOS)
     if let Ok(system_python_path) = std::env::var("LOGIA_PYTHON_PATH") {
+        #[cfg(debug_assertions)]
         println!("Using LOGIA_PYTHON_PATH from environment: {}", system_python_path);
         append_to_log(&log_path, &format!("LOGIA_PYTHON_PATH set: {}", system_python_path));
         
@@ -992,6 +993,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         
         if let Ok(output) = check_result {
             if output.status.success() {
+                #[cfg(debug_assertions)]
                 println!("faster_whisper already available in system Python");
                 append_to_log(&log_path, "faster_whisper already available in system Python");
                 return Ok(app_data_dir.join("system_python_override"));
@@ -999,6 +1001,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         }
         
         // faster_whisper not installed - try to install it using uv to a local venv
+        #[cfg(debug_assertions)]
         println!("faster_whisper not found in system Python, installing to local venv...");
         append_to_log(&log_path, "faster_whisper not found, creating local venv for Nix...");
         
@@ -1011,6 +1014,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         
         if let Ok(status) = cmd_uv_venv.status() {
             if status.success() {
+                #[cfg(debug_assertions)]
                 println!("Created venv for Nix using uv");
                 append_to_log(&log_path, "Created venv for Nix using uv");
                 
@@ -1021,6 +1025,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
                 
                 if let Ok(install_status) = cmd_install.status() {
                     if install_status.success() {
+                        #[cfg(debug_assertions)]
                         println!("Successfully installed faster-whisper for Nix");
                         append_to_log(&log_path, "Successfully installed faster-whisper for Nix");
                         // Return venv path so transcription uses the venv python
@@ -1060,6 +1065,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
                 let version_str_err = String::from_utf8_lossy(&output.stderr);
 
                 if version_str.contains("3.14") || version_str_err.contains("3.14") {
+                    #[cfg(debug_assertions)]
                     println!("Detected Python 3.14 in venv, which is likely incompatible. Recreating venv with 3.12...");
                     append_to_log(&log_path, "Detected incompatible Python in venv, removing venv to recreate");
                     let _ = std::fs::remove_dir_all(&venv_path);
@@ -1067,6 +1073,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
             }
         } else {
             // Venv dir exists but python binary is missing? it's broken.
+            #[cfg(debug_assertions)]
             println!("Venv directory exists but python binary missing. Recreating...");
             append_to_log(&log_path, "Venv broken (no python binary), removing to recreate");
             let _ = std::fs::remove_dir_all(&venv_path);
@@ -1075,6 +1082,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
     // Create virtual environment if it doesn't exist
     if !venv_path.exists() {
+        #[cfg(debug_assertions)]
         println!("Creating virtual environment...");
         append_to_log(&log_path, "Creating virtual environment...");
 
@@ -1084,9 +1092,11 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
             hide_console(&mut cmd_uv_venv);
             let status = cmd_uv_venv.status().map(|s| s.success()).unwrap_or(false);
             if status {
+                #[cfg(debug_assertions)]
                 println!("Created venv with uv (Python 3.12)");
                 append_to_log(&log_path, "Created venv with uv (Python 3.12)");
             } else {
+                 #[cfg(debug_assertions)]
                  println!("uv failed to create venv");
                  append_to_log(&log_path, "uv failed to create venv");
             }
@@ -1100,6 +1110,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
             let created_with_py = cmd_py.status().map(|s| s.success()).unwrap_or(false);
 
             if created_with_py {
+                #[cfg(debug_assertions)]
                 println!("Created venv with py launcher");
                 append_to_log(&log_path, "Created venv with py launcher");
             }
@@ -1111,6 +1122,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
                 let created_with_python = cmd_python.status().map(|s| s.success()).unwrap_or(false);
 
                 if created_with_python {
+                    #[cfg(debug_assertions)]
                     println!("Created venv with python.exe");
                     append_to_log(&log_path, "Created venv with python.exe");
                 }
@@ -1124,6 +1136,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         };
 
         if !venv_created {
+            #[cfg(debug_assertions)]
             println!("uv failed or not available, falling back to python3...");
             append_to_log(&log_path, "uv failed/missing, falling back to python3");
 
@@ -1134,6 +1147,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
             let status = cmd_py3.status().map(|s| s.success()).unwrap_or(false);
 
             if status {
+                #[cfg(debug_assertions)]
                 println!("Created venv with python3");
                 append_to_log(&log_path, "Created venv with python3");
             }
@@ -1144,6 +1158,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
             append_to_log(&log_path, "Failed to create virtual environment");
             return Err("Failed to create virtual environment".to_string());
         } else{
+            #[cfg(debug_assertions)]
             println!("Venv works gng");
         }
     }
@@ -1168,6 +1183,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
     // Ensure pip/setuptools/wheel/cython and imageio-ffmpeg are available to improve build success
     // (helps avoid building C extensions like 'av' from source when possible)
+    #[cfg(debug_assertions)]
     println!("Upgrading pip/setuptools/wheel and installing build helpers (cython, imageio-ffmpeg)...");
     append_to_log(&log_path, "Upgrading pip/setuptools/wheel and installing build helpers (cython, imageio-ffmpeg)...");
     let mut cmd_upgrade = Command::new(&python_path);
@@ -1177,7 +1193,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         .env_remove("PYTHONHOME")
         .env_remove("PYTHONPATH")
         .status()
-        .map(|s| if s.success() { println!("Build helpers installed/updated"); } else { println!("Warning: failed to upgrade/install build helpers (exit code: {:?})", s.code()); });
+        .map(|s| if s.success() { if cfg!(debug_assertions) { println!("Build helpers installed/updated"); } } else { if cfg!(debug_assertions) { println!("Warning: failed to upgrade/install build helpers (exit code: {:?})", s.code()); } });
     
     append_to_log(&log_path, "Attempting to install build helper packages (pip upgrade etc.)");
 
@@ -1192,6 +1208,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
     if let Ok(status) = check_import_status {
         if status.success() {
+            #[cfg(debug_assertions)]
             println!("faster_whisper already installed in venv.");
             append_to_log(&log_path, "faster_whisper already installed in venv.");
             return Ok(venv_path); // Dependencies already installed, return venv_path
@@ -1199,11 +1216,13 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
     }
 
     // Install dependencies if not already installed
+    #[cfg(debug_assertions)]
     println!("Installing transcription dependencies...");
     append_to_log(&log_path, "Installing transcription dependencies...");
 
     // Prefer uv for installs. If uv is available, use it exclusively. If uv is not present, fall back to pip routes.
     if uv_available {
+        #[cfg(debug_assertions)]
         println!("uv found - installing dependencies using uv...");
         append_to_log(&log_path, "uv found - installing dependencies using uv...");
         let mut cmd_uv_install = Command::new("uv");
@@ -1216,17 +1235,20 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
         match status_result {
             Ok(status) if status.success() => {
+                #[cfg(debug_assertions)]
                 println!("Successfully installed dependencies with uv");
                 append_to_log(&log_path, "Successfully installed dependencies with uv");
                 return Ok(venv_path);
             },
             Ok(status) => {
+                #[cfg(debug_assertions)]
                 println!("uv install failed with exit code: {:?}", status.code());
                 append_to_log(&log_path, &format!("uv failed with exit code: {:?}", status.code()));
                 // Do not fall back automatically when uv exists; surface the error and advise user
                 return Err(format!("uv failed to install dependencies (exit code {:?}). Try running 'uv pip install -r {}'.", status.code(), requirements_path.to_string_lossy()));
             },
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("Failed to execute uv: {}", e);
                 append_to_log(&log_path, &format!("Failed to execute uv: {}", e));
                 return Err(format!("Failed to execute uv: {}", e));
@@ -1234,11 +1256,13 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
         }
     } else {
         // uv not available — run pip-based fallback (prefer-binary first)
+        #[cfg(debug_assertions)]
         println!("uv not found - falling back to pip-based installation (prefer-binary)...");
         append_to_log(&log_path, "uv not found - falling back to pip-based installation (prefer-binary)...");
 
         let mut install_success = false;
 
+        #[cfg(debug_assertions)]
         println!("Attempting pip install with --prefer-binary to avoid building C extensions...");
         append_to_log(&log_path, "Attempting pip install with --prefer-binary to avoid building C extensions...");
 
@@ -1252,17 +1276,20 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
         match prefer_binary {
             Ok(output) if output.status.success() => {
+                #[cfg(debug_assertions)]
                 println!("Successfully installed dependencies with --prefer-binary");
                 append_to_log(&log_path, "Successfully installed dependencies with --prefer-binary");
                 install_success = true;
             }
             Ok(output) => {
+                #[cfg(debug_assertions)]
                 println!("--prefer-binary install failed, exit code: {:?}", output.status.code());
                 // Save stderr for diagnostics
                 append_to_log(&log_path, &format!("--prefer-binary failed: {}", String::from_utf8_lossy(&output.stderr)));
                 append_to_log(&log_path, &format!("Wrote pip stderr to {:?}", log_path));
 
                 // Try installing faster-whisper directly with prefer-binary
+                #[cfg(debug_assertions)]
                 println!("Attempting to install faster-whisper directly with --prefer-binary...");
                 append_to_log(&log_path, "Attempting to install faster-whisper directly with --prefer-binary...");
                 let mut cmd_direct = Command::new(&python_path);
@@ -1275,6 +1302,7 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
 
                 match direct {
                     Ok(out2) if out2.status.success() => {
+                        #[cfg(debug_assertions)]
                         println!("Successfully installed faster-whisper directly");
                         append_to_log(&log_path, "Successfully installed faster-whisper directly");
                         install_success = true;
@@ -1284,12 +1312,14 @@ async fn ensure_transcription_dependencies(app_handle: &tauri::AppHandle) -> Res
                         append_to_log(&log_path, "Direct install also failed");
                     }
                     Err(e) => {
+                        #[cfg(debug_assertions)]
                         println!("Failed to execute pip for direct install: {}", e);
                         append_to_log(&log_path, &format!("Failed to execute pip for direct install: {}", e));
                     }
                 }
             }
             Err(e) => {
+                #[cfg(debug_assertions)]
                 println!("Failed to execute pip (prefer-binary): {}", e);
                 append_to_log(&log_path, &format!("Failed to execute pip (prefer-binary): {}", e));
             }

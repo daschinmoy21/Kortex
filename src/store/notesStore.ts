@@ -219,11 +219,9 @@ export const useNotesStore = create<NotesState>()(
     },
 
     updateCurrentNoteContent: (content: string) => {
-      console.log('updateCurrentNoteContent called with length:', content.length);
       const state = get();
 
       if (state.currentNote) {
-        console.log('Updating note content locally');
         // Clear any existing save timeout
         if (state.saveTimeout) {
           clearTimeout(state.saveTimeout);
@@ -232,11 +230,11 @@ export const useNotesStore = create<NotesState>()(
         // Update the current note content locally
         const updatedNote = { ...state.currentNote, content };
 
-        // Schedule auto-save with aggressive debounce for canvas notes
+        // Longer debounce for canvas notes (1500ms) vs text notes (600ms)
+        const debounceMs = state.currentNote.note_type === 'canvas' ? 1500 : 600;
         const newTimeout = setTimeout(() => {
-          console.log('Executing autosave timeout');
           get().saveCurrentNote();
-        }, 200); // Aggressive save for canvas
+        }, debounceMs);
 
         set((state) => ({
           currentNote: updatedNote,
@@ -245,8 +243,6 @@ export const useNotesStore = create<NotesState>()(
           ),
           saveTimeout: newTimeout,
         }));
-      } else {
-        console.log('No current note to update');
       }
     },
 
@@ -274,19 +270,14 @@ export const useNotesStore = create<NotesState>()(
     },
 
     saveCurrentNote: async () => {
-      console.log('saveCurrentNote called');
       const state = get();
       if (state.currentNote) {
         try {
-          console.log('Invoking save_note');
           await invoke('save_note', { note: state.currentNote });
           set({ saveTimeout: null });
-          console.log('Note saved successfully:', state.currentNote.id);
         } catch (error) {
           console.error('Failed to save note:', error);
         }
-      } else {
-        console.log('No current note to save');
       }
     },
   })
