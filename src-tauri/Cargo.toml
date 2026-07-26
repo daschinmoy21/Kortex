@@ -1,6 +1,6 @@
 [package]
 name = "logia"
-version = "0.9.5"
+version = "0.10.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -41,7 +41,7 @@ fs2 = "0.4"
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
-screencapturekit = {version="1"}
+screencapturekit = { version = "1" }
 objc2 = "0.5.2"
-objc2-foundation = { version = "0.2.2", features = ["std"]  }
+objc2-foundation = { version = "0.2.2", features = ["std"] }
 cocoa = "0.26.1"
