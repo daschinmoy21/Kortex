@@ -211,7 +211,7 @@ export const Sidebar = () => {
   const handleRestore = async (item: TrashItem) => {
     try {
       await invoke('restore_from_trash', { itemId: item.id, itemType: item.original_type });
-      toast.success(`${item.original_type === 'note' ? 'Note' : 'Folder'} restored!`);
+      toast.success(item.original_type === 'note' ? 'Note restored!' : 'Folder and contents restored!');
       // Refresh both trash list and notes/folders
       await loadTrashItems();
       loadNotes();

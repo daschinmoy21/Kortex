@@ -346,6 +346,40 @@ fn collect_descendant_folder_ids(folders_dir: &PathBuf, root_id: &str) -> Vec<St
     descendants
 }
 
+/// Collect descendant folder IDs from trash via BFS on parent_id chain.
+fn collect_trash_descendant_folder_ids(trash_dir: &PathBuf, root_id: &str) -> Vec<String> {
+    let mut all_folders: Vec<Folder> = Vec::new();
+    if let Ok(entries) = fs::read_dir(trash_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if fname.starts_with("folder_") && path.extension().and_then(|s| s.to_str()) == Some("json") {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(folder) = serde_json::from_str::<Folder>(&content) {
+                        all_folders.push(folder);
+                    }
+                }
+            }
+        }
+    }
+    let mut descendants: Vec<String> = Vec::new();
+    let mut queue: Vec<String> = all_folders
+        .iter()
+        .filter(|f| f.parent_id.as_deref() == Some(root_id))
+        .map(|f| f.id.clone())
+        .collect();
+    while let Some(current) = queue.pop() {
+        descendants.push(current.clone());
+        let children: Vec<String> = all_folders
+            .iter()
+            .filter(|f| f.parent_id.as_deref() == Some(&current))
+            .map(|f| f.id.clone())
+            .collect();
+        queue.extend(children);
+    }
+    descendants
+}
+
 #[tauri::command]
 pub async fn delete_folder(folder_id: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     require_safe_id(&folder_id)?;
@@ -525,46 +559,88 @@ pub async fn empty_trash(app_handle: tauri::AppHandle) -> Result<usize, String> 
 pub async fn restore_from_trash(item_id: String, item_type: String, app_handle: tauri::AppHandle) -> Result<(), String> {
     require_safe_id(&item_id)?;
     let trash_dir = get_trash_directory(&app_handle)?;
-    
-    let (trash_filename, dest_dir) = match item_type.as_str() {
-        "note" => (
-            format!("note_{}.json", item_id),
-            get_notes_directory(&app_handle)?
-        ),
-        "folder" => (
-            format!("folder_{}.json", item_id),
-            get_folders_directory(&app_handle)?
-        ),
+
+    match item_type.as_str() {
+        "note" => {
+            let trash_filename = format!("note_{}.json", item_id);
+            let dest_dir = get_notes_directory(&app_handle)?;
+            let source_path = trash_dir.join(&trash_filename);
+            let dest_path = dest_dir.join(format!("{}.json", item_id));
+
+            if !source_path.exists() {
+                return Err("Item not found in trash".to_string());
+            }
+            if dest_path.exists() {
+                return Err(format!(
+                    "Cannot restore: a note with this id already exists. Rename or delete the existing item first."
+                ));
+            }
+            if !dest_dir.exists() {
+                fs::create_dir_all(&dest_dir)
+                    .map_err(|e| format!("Failed to create destination directory: {}", e))?;
+            }
+            if let Err(_) = fs::rename(&source_path, &dest_path) {
+                fs::copy(&source_path, &dest_path)
+                    .map_err(|e| format!("Failed to restore item: {}", e))?;
+                fs::remove_file(&source_path)
+                    .map_err(|e| format!("Failed to remove from trash: {}", e))?;
+            }
+        }
+        "folder" => {
+            let folders_dir = get_folders_directory(&app_handle)?;
+            let notes_dir = get_notes_directory(&app_handle)?;
+
+            let root_trash_path = trash_dir.join(format!("folder_{}.json", item_id));
+            if !root_trash_path.exists() {
+                return Err("Item not found in trash".to_string());
+            }
+
+            // 1. Collect descendant folder IDs still in trash via parent_id chain
+            let descendant_ids = collect_trash_descendant_folder_ids(&trash_dir, &item_id);
+
+            // 2. Ordered restore: root first, then descendants (parent-before-child)
+            let mut restore_order = vec![item_id.clone()];
+            restore_order.extend(descendant_ids);
+
+            // 3. Restore each folder; skip silently if dest already exists
+            for folder_id in &restore_order {
+                let src = trash_dir.join(format!("folder_{}.json", folder_id));
+                let dst = folders_dir.join(format!("{}.json", folder_id));
+                if !src.exists() || dst.exists() {
+                    continue;
+                }
+                if fs::rename(&src, &dst).is_err() {
+                    let _ = fs::copy(&src, &dst);
+                    let _ = fs::remove_file(&src);
+                }
+            }
+
+            // 4. Restore notes whose folder_id points to any restored folder
+            if let Ok(entries) = fs::read_dir(&trash_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let fname = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    if !fname.starts_with("note_") || path.extension().and_then(|s| s.to_str()) != Some("json") {
+                        continue;
+                    }
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if let Ok(note) = serde_json::from_str::<Note>(&content) {
+                            if note.folder_id.as_ref().map_or(false, |fid| restore_order.contains(fid)) {
+                                let note_dst = notes_dir.join(format!("{}.json", note.id));
+                                if note_dst.exists() {
+                                    continue;
+                                }
+                                if fs::rename(&path, &note_dst).is_err() {
+                                    let _ = fs::copy(&path, &note_dst);
+                                    let _ = fs::remove_file(&path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         _ => return Err("Invalid item type".to_string()),
-    };
-
-    let source_path = trash_dir.join(&trash_filename);
-    let dest_path = dest_dir.join(format!("{}.json", item_id));
-
-    if !source_path.exists() {
-        return Err("Item not found in trash".to_string());
-    }
-
-    // Refuse to overwrite an existing live item (prevents silent data loss)
-    if dest_path.exists() {
-        return Err(format!(
-            "Cannot restore: a {} with this id already exists. Rename or delete the existing item first.",
-            item_type
-        ));
-    }
-
-    // Ensure destination directory exists
-    if !dest_dir.exists() {
-        fs::create_dir_all(&dest_dir)
-            .map_err(|e| format!("Failed to create destination directory: {}", e))?;
-    }
-
-    // Move back from trash
-    if let Err(_) = fs::rename(&source_path, &dest_path) {
-        fs::copy(&source_path, &dest_path)
-            .map_err(|e| format!("Failed to restore item: {}", e))?;
-        fs::remove_file(&source_path)
-            .map_err(|e| format!("Failed to remove from trash: {}", e))?;
     }
 
     Ok(())
