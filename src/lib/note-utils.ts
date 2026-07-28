@@ -70,3 +70,34 @@ export function countWordsInNoteContent(content: string | null | undefined): num
 
   return content.split(/\s+/).filter((w) => w.length > 0).length;
 }
+
+/** Recent notes for empty command palette (newest first). */
+export function recentNotes(notes: Note[], limit = 10): Note[] {
+  return [...notes]
+    .sort((a, b) => {
+      const tb = Date.parse(b.updated_at || '') || 0;
+      const ta = Date.parse(a.updated_at || '') || 0;
+      return tb - ta;
+    })
+    .slice(0, limit);
+}
+
+/**
+ * Results to show in the command palette: Fuse matches when querying,
+ * otherwise the most recently updated notes.
+ */
+export function commandPaletteResults(
+  query: string,
+  notes: Note[],
+  fuseMatches: Note[],
+  recentLimit = 10,
+): Note[] {
+  if (query.trim()) return fuseMatches;
+  return recentNotes(notes, recentLimit);
+}
+
+/** Safe circular index for arrow-key selection (no-op on empty lists). */
+export function cycleIndex(current: number, delta: number, length: number): number {
+  if (length <= 0) return 0;
+  return (current + delta + length) % length;
+}

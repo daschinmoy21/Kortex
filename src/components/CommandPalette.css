@@ -115,4 +115,23 @@
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
+  color: #a1a1aa;
+  flex-shrink: 0;
+}
+
+.command-palette-content li .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.command-palette-content li.command-palette-empty {
+  cursor: default;
+  color: #71717a;
+  justify-content: center;
+}
+
+.command-palette-content li.command-palette-empty:hover {
+  background-color: transparent;
 }
