@@ -53,11 +53,14 @@ const blockDoc = JSON.stringify([
   },
 ]);
 
-// Naive split on raw JSON would count many "words"; real text has 5
+// Readable text is "Hello world one two three" → 5 words (not JSON keys)
 assert.equal(countWordsInNoteContent(blockDoc), 5);
+// Pretty-printed JSON still must not count structural tokens as words
+const pretty = JSON.stringify(JSON.parse(blockDoc), null, 2);
+assert.equal(countWordsInNoteContent(pretty), 5);
 assert.ok(
-  blockDoc.split(/\s+/).filter((w) => w.length > 0).length > 5,
-  'sanity: raw JSON split overcounts vs real text',
+  pretty.split(/\s+/).filter((w) => w.length > 0).length > 5,
+  'sanity: naive split of pretty JSON overcounts vs real text',
 );
 assert.equal(countWordsInNoteContent('plain two words'), 3);
 assert.equal(countWordsInNoteContent(''), 0);
