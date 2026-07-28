@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { openCreatedNote, countWordsInNoteContent } from './note-utils.ts';
+import {
+  openCreatedNote,
+  countWordsInNoteContent,
+  recentNotes,
+  commandPaletteResults,
+  cycleIndex,
+} from './note-utils.ts';
 import type { Note } from '../types/Note.ts';
 
 function makeNote(partial: Partial<Note> & { id: string; title: string }): Note {
@@ -83,3 +89,31 @@ const nested = JSON.stringify([
 assert.equal(countWordsInNoteContent(nested), 5);
 
 console.log('note-utils countWordsInNoteContent: ok');
+
+// --- recentNotes / commandPaletteResults / cycleIndex ---
+const n1 = makeNote({ id: '1', title: 'Older', updated_at: '2026-01-01T00:00:00.000Z' });
+const n2 = makeNote({ id: '2', title: 'Newer', updated_at: '2026-06-01T00:00:00.000Z' });
+const n3 = makeNote({ id: '3', title: 'Mid', updated_at: '2026-03-01T00:00:00.000Z' });
+
+assert.deepEqual(
+  recentNotes([n1, n2, n3], 2).map((n) => n.id),
+  ['2', '3'],
+);
+
+assert.deepEqual(
+  commandPaletteResults('', [n1, n2], [n1]).map((n) => n.id),
+  ['2', '1'],
+  'empty query uses recent notes, not fuse matches',
+);
+assert.deepEqual(
+  commandPaletteResults('  x  ', [n1, n2], [n1]).map((n) => n.id),
+  ['1'],
+  'non-empty query uses fuse matches',
+);
+
+assert.equal(cycleIndex(0, 1, 0), 0);
+assert.equal(cycleIndex(0, 1, 3), 1);
+assert.equal(cycleIndex(2, 1, 3), 0);
+assert.equal(cycleIndex(0, -1, 3), 2);
+
+console.log('note-utils palette helpers: ok');
