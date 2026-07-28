@@ -15,6 +15,7 @@ import { Settings } from "./components/Settings.tsx";
 import { useNotesStore } from "./store/notesStore";
 import { Toaster } from "react-hot-toast";
 import PreflightModal from "./components/PrereflightModal.tsx";
+import { countWordsInNoteContent } from "./lib/note-utils";
 
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -29,7 +30,7 @@ function App() {
   const { currentNote, saveTimeout } = useNotesStore();
 
   const wordCount = currentNote
-    ? currentNote.content.split(/\s+/).filter((word) => word.length > 0).length
+    ? countWordsInNoteContent(currentNote.content)
     : 0;
 
   const isSaved = !saveTimeout;
