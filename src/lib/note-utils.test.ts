@@ -123,3 +123,4 @@ console.log('note-utils palette helpers: ok');
 assert.equal(footerSaveLabel(true), 'Saved');
 assert.equal(footerSaveLabel(false), 'Saving…');
 console.log('note-utils footerSaveLabel: ok');
+
