@@ -5,6 +5,7 @@ import {
   recentNotes,
   commandPaletteResults,
   cycleIndex,
+  footerSaveLabel,
 } from './note-utils.ts';
 import type { Note } from '../types/Note.ts';
 
@@ -117,3 +118,8 @@ assert.equal(cycleIndex(2, 1, 3), 0);
 assert.equal(cycleIndex(0, -1, 3), 2);
 
 console.log('note-utils palette helpers: ok');
+
+// --- footerSaveLabel ---
+assert.equal(footerSaveLabel(true), 'Saved');
+assert.equal(footerSaveLabel(false), 'Saving…');
+console.log('note-utils footerSaveLabel: ok');

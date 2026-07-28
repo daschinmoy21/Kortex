@@ -101,3 +101,8 @@ export function cycleIndex(current: number, delta: number, length: number): numb
   if (length <= 0) return 0;
   return (current + delta + length) % length;
 }
+
+/** Footer save indicator label from pending-autosave state. */
+export function footerSaveLabel(isSaved: boolean): string {
+  return isSaved ? 'Saved' : 'Saving…';
+}
