@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { openCreatedNote } from './note-utils.ts';
+import { openCreatedNote, countWordsInNoteContent } from './note-utils.ts';
 import type { Note } from '../types/Note.ts';
 
 function makeNote(partial: Partial<Note> & { id: string; title: string }): Note {
@@ -35,3 +35,51 @@ assert.deepEqual(
 assert.equal(again.currentNote.id, 'b');
 
 console.log('note-utils openCreatedNote: ok');
+
+// --- countWordsInNoteContent ---
+const blockDoc = JSON.stringify([
+  {
+    id: '1',
+    type: 'heading',
+    props: { level: 1 },
+    content: [{ type: 'text', text: 'Hello world', styles: {} }],
+    children: [],
+  },
+  {
+    id: '2',
+    type: 'paragraph',
+    content: [{ type: 'text', text: 'one two three', styles: {} }],
+    children: [],
+  },
+]);
+
+// Readable text is "Hello world one two three" → 5 words (not JSON keys)
+assert.equal(countWordsInNoteContent(blockDoc), 5);
+// Pretty-printed JSON still must not count structural tokens as words
+const pretty = JSON.stringify(JSON.parse(blockDoc), null, 2);
+assert.equal(countWordsInNoteContent(pretty), 5);
+assert.ok(
+  pretty.split(/\s+/).filter((w) => w.length > 0).length > 5,
+  'sanity: naive split of pretty JSON overcounts vs real text',
+);
+assert.equal(countWordsInNoteContent('plain two words'), 3);
+assert.equal(countWordsInNoteContent(''), 0);
+assert.equal(countWordsInNoteContent(null), 0);
+
+// Nested children
+const nested = JSON.stringify([
+  {
+    type: 'bulletListItem',
+    content: [{ type: 'text', text: 'parent item', styles: {} }],
+    children: [
+      {
+        type: 'bulletListItem',
+        content: [{ type: 'text', text: 'child words here', styles: {} }],
+        children: [],
+      },
+    ],
+  },
+]);
+assert.equal(countWordsInNoteContent(nested), 5);
+
+console.log('note-utils countWordsInNoteContent: ok');
