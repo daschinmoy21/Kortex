@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { Note, Folder } from '../types/Note';
+import { openCreatedNote } from '../lib/note-utils';
 
 interface NotesState {
   notes: Note[];
@@ -76,6 +77,13 @@ export const useNotesStore = create<NotesState>()(
 
     createNote: async (noteType = 'text', folderId) => {
       try {
+        // Flush pending autosave before switching to the new note
+        const pending = get().saveTimeout;
+        if (pending) {
+          clearTimeout(pending);
+          await get().saveCurrentNote();
+        }
+
         // Create initial content with a Heading 1 "Untitled" in a single backend call
         // (avoids a race between create_note + save_note)
         const initialContent = JSON.stringify([
@@ -95,9 +103,8 @@ export const useNotesStore = create<NotesState>()(
           content: initialContent,
         });
 
-        set((state) => ({
-          notes: [newNote, ...state.notes],
-        }));
+        // Open the new note immediately so EmptyState / AI capture / sidebar create work
+        set((state) => openCreatedNote(state.notes, newNote));
 
         return newNote;
       } catch (error) {

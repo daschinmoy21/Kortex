@@ -9,7 +9,8 @@
     "build:audio": "node src-tauri/scripts/build-audio.js",
     "build": "bun run build:audio && tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:unit": "node --experimental-strip-types --test src/lib/note-utils.test.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^2.0.23",
