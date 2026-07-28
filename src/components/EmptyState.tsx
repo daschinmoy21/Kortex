@@ -4,6 +4,8 @@ import { FileText, Clock, Layout, ArrowRight, GitBranch, RefreshCw, Loader2 } fr
 import toast from "react-hot-toast";
 import { invoke } from "@tauri-apps/api/core";
 import useUiStore from "../store/UiStore";
+import { recentNotes as getRecentNotes } from "../lib/note-utils";
+import { searchModKeyLabel } from "../lib/utils";
 
 interface GitSyncResult {
   message: string;
@@ -12,8 +14,9 @@ interface GitSyncResult {
 
 export function EmptyState() {
   const { createNote, notes } = useNotesStore();
-  const recentNotes = notes.slice(0, 3);
+  const recent = getRecentNotes(notes, 3);
   const { gitSyncConfigured, isSyncing, setIsSyncing, setLastSyncedAt } = useUiStore();
+  const modKey = searchModKeyLabel();
 
   const quickActions = [
     {
@@ -149,7 +152,7 @@ export function EmptyState() {
         </motion.div>
 
         {/* Recent Notes */}
-        {recentNotes.length > 0 && (
+        {recent.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -164,7 +167,7 @@ export function EmptyState() {
             </div>
 
             <div className="bg-zinc-900/30 rounded-lg border border-zinc-800/50 divide-y divide-zinc-800/50">
-              {recentNotes.map((note) => (
+              {recent.map((note) => (
                 <button
                   key={note.id}
                   onClick={() => useNotesStore.getState().selectNote(note)}
@@ -207,7 +210,7 @@ export function EmptyState() {
           <p className="text-xs text-zinc-600">
             Press{" "}
             <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-zinc-400 font-mono text-[10px]">
-              ⌘
+              {modKey}
             </kbd>{" "}
             <kbd className="px-1.5 py-0.5 bg-zinc-800 border border-zinc-700 rounded text-zinc-400 font-mono text-[10px]">
               P

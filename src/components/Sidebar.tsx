@@ -33,6 +33,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { AnimatedFileTree } from "./AnimatedFileTree";
 import toast from "react-hot-toast";
 import { processTranscription } from "../lib/aiTranscription";
+import { searchModKeyLabel } from "../lib/utils";
 
 // Type for trash items from backend
 interface TrashItem {
@@ -81,6 +82,9 @@ export const Sidebar = () => {
   );
   const gitSyncConfigured = useUiStore((state) => state.gitSyncConfigured);
   const isSyncing = useUiStore((state) => state.isSyncing);
+  const lastSyncedAt = useUiStore((state) => state.lastSyncedAt);
+  const modKey = searchModKeyLabel();
+  const isHome = !currentNote;
 
   // Folder renaming state
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
@@ -260,12 +264,12 @@ export const Sidebar = () => {
           <div className="space-y-0.5">
             <button
               onClick={openCommandPalette}
-              className="w-full border border-blue-200/40 flex items-center gap-3 px-2 py-1.5 mb-2 text-sm font-medium hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors group"
+              className="w-full border border-zinc-700/80 flex items-center gap-3 px-2 py-1.5 mb-2 text-sm font-medium hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors group"
             >
               <Search size={16} />
               <span>Search</span>
-              <kbd className="ml-auto pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-zinc-800 bg-zinc-900 px-1.5 font-mono text-[10px] text-zinc-500 opacity-0 group-hover:opacity-100 font-medium transition-opacity sm:flex">
-                <span className="text-xs">⌘</span>P
+              <kbd className="ml-auto pointer-events-none hidden h-5 select-none items-center gap-1 rounded border border-zinc-800 bg-zinc-900 px-1.5 font-mono text-[10px] text-zinc-500 group-hover:text-zinc-400 font-medium sm:flex">
+                <span className="text-xs">{modKey}</span>P
               </kbd>
             </button>
             <button
@@ -273,7 +277,12 @@ export const Sidebar = () => {
                 selectNote(null);
                 setSelectedFolderId(null);
               }}
-              className="w-full flex items-center gap-3 px-2 py-1.5 mb-2 text-sm font-medium hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200 rounded-md transition-colors"
+              className={`w-full flex items-center gap-3 px-2 py-1.5 mb-2 text-sm font-medium rounded-md transition-colors ${
+                isHome
+                  ? "bg-zinc-800/80 text-zinc-100"
+                  : "hover:bg-zinc-900 text-zinc-400 hover:text-zinc-200"
+              }`}
+              aria-current={isHome ? "page" : undefined}
             >
               <Home size={16} />
               <span>Home</span>
@@ -353,14 +362,15 @@ export const Sidebar = () => {
               <span className="flex items-center gap-1">
                 Notes <ChevronDown size={10} />
               </span>
-              <div className="flex items-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     handleCreateNote("text");
                   }}
-                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300"
+                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
                   title="New Note"
+                  aria-label="New note"
                 >
                   <Files size={16} />
                 </button>
@@ -369,8 +379,9 @@ export const Sidebar = () => {
                     e.stopPropagation();
                     handleCreateNote("canvas");
                   }}
-                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300"
+                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
                   title="New Canvas"
+                  aria-label="New canvas"
                 >
                   <Layout size={16} />
                 </button>
@@ -379,10 +390,11 @@ export const Sidebar = () => {
                     e.stopPropagation();
                     handleCreateFolder();
                   }}
-                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300"
+                  className="hover:bg-zinc-800 p-0.5 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
                   title="New Folder"
+                  aria-label="New folder"
                 >
-                  <Plus size={20} />
+                  <Plus size={18} />
                 </button>
               </div>
             </div>
@@ -431,20 +443,20 @@ export const Sidebar = () => {
                   {isSyncing ? (
                     <>
                       <RotateCw className="w-3.5 h-3.5 animate-spin text-zinc-400" />
-                      <span className="text-xs font-medium bg-gradient-to-r from-zinc-400 to-zinc-600 bg-clip-text text-transparent">Syncing...</span>
+                      <span className="text-xs font-medium text-zinc-400">Syncing…</span>
                     </>
                   ) : (
                     <>
                       <GitBranch className="w-3.5 h-3.5 text-emerald-500" />
-                      <span className="text-xs font-medium bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent">Git Sync</span>
+                      <span className="text-xs font-medium text-emerald-400">Git Sync</span>
                     </>
                   )}
                 </div>
                 {!isSyncing && (
-                  <span className="text-[10px] text-zinc-500">
-                    {useUiStore.getState().lastSyncedAt
-                      ? new Date(useUiStore.getState().lastSyncedAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                      : ''}
+                  <span className="text-[10px] text-zinc-500 tabular-nums">
+                    {lastSyncedAt
+                      ? lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      : 'Not synced'}
                   </span>
                 )}
               </div>

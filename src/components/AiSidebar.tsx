@@ -19,6 +19,7 @@ import {
   ChevronRight,
   MoreHorizontal,
   Plus,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AnimatePresence, motion } from "framer-motion";
@@ -30,7 +31,7 @@ interface AiSidebarProps {
 
 type Tab = "chat" | "calendar" | "tags";
 
-const AiSidebar = ({ isOpen, onClose: _onClose }: AiSidebarProps) => {
+const AiSidebar = ({ isOpen, onClose }: AiSidebarProps) => {
   const { currentNote } = useNotesStore();
   const { ensureGoogleApiKey, hasGoogleApiKey } = useUiStore();
   const [activeTab, setActiveTab] = useState<Tab>("chat");
@@ -242,8 +243,8 @@ TO REPLACE CONTENT:
         <motion.div
           initial={{ width: 0, opacity: 0 }}
           animate={{ width: "auto", opacity: 1 }}
-          exit={{ width: 0, opacity: 1 }}
-          transition={{ duration: 0.2, ease: "easeInOut" }}
+          exit={{ width: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           style={{ height: "100%" }}
         >
           <Resizable
@@ -260,27 +261,42 @@ TO REPLACE CONTENT:
               <div className="flex items-center justify-between px-2 py-2 border-b border-zinc-900 bg-zinc-950 sticky top-0 z-10">
                 <div className="flex items-center gap-1 bg-zinc-900/50 p-1 rounded-lg">
                   <button
+                    type="button"
                     onClick={() => setActiveTab("chat")}
                     className={`p-1.5 rounded-md transition-all ${activeTab === "chat" ? "bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}
                     title="AI Chat"
+                    aria-pressed={activeTab === "chat"}
                   >
                     <Sparkles size={16} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => setActiveTab("calendar")}
                     className={`p-1.5 rounded-md transition-all ${activeTab === "calendar" ? "bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}
                     title="Calendar"
+                    aria-pressed={activeTab === "calendar"}
                   >
                     <CalendarIcon size={16} />
                   </button>
                   <button
+                    type="button"
                     onClick={() => setActiveTab("tags")}
                     className={`p-1.5 rounded-md transition-all ${activeTab === "tags" ? "bg-zinc-800 text-zinc-100 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}
                     title="Tags & Properties"
+                    aria-pressed={activeTab === "tags"}
                   >
                     <Hash size={16} />
                   </button>
                 </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="p-1.5 rounded-md text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+                  title="Close AI sidebar"
+                  aria-label="Close AI sidebar"
+                >
+                  <ChevronRight size={16} />
+                </button>
               </div>
 
               {/* Content Area */}
@@ -292,7 +308,19 @@ TO REPLACE CONTENT:
                       ref={scrollableContainerRef}
                       className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-zinc-800 scrollbar-track-transparent"
                     >
-                      {messages.length === 0 ? (
+                      {!currentNote ? (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-6 mt-10">
+                          <div className="relative bg-zinc-900 p-4 rounded-xl border border-zinc-800 shadow-lg mb-4">
+                            <FileText size={28} className="text-zinc-400" />
+                          </div>
+                          <h3 className="text-zinc-100 text-base font-semibold mb-1">
+                            Open a note to chat
+                          </h3>
+                          <p className="text-zinc-500 text-sm max-w-[220px]">
+                            AI chat is tied to the active note. Create or select one from the sidebar.
+                          </p>
+                        </div>
+                      ) : messages.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-center p-6 mt-10">
                           <div className="mb-6 relative">
                             <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full"></div>
@@ -304,7 +332,12 @@ TO REPLACE CONTENT:
                             What can I help you with?
                           </h3>
                           <div className="flex flex-col gap-2 mt-6 w-full max-w-xs">
-                            <button className="flex items-center gap-3 w-full p-3 rounded-lg bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 transition-all group text-left">
+                            <button
+                              type="button"
+                              disabled={isLoading}
+                              onClick={() => handleSendMessage("Summarize this note")}
+                              className="flex items-center gap-3 w-full p-3 rounded-lg bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 transition-all group text-left disabled:opacity-50"
+                            >
                               <span className="text-zinc-500 group-hover:text-blue-400 transition-colors">
                                 <AlignLeft size={16} />
                               </span>
@@ -312,7 +345,12 @@ TO REPLACE CONTENT:
                                 Summarize this note
                               </span>
                             </button>
-                            <button className="flex items-center gap-3 w-full p-3 rounded-lg bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 transition-all group text-left">
+                            <button
+                              type="button"
+                              disabled={isLoading}
+                              onClick={() => handleSendMessage("Brainstorm ideas related to this note")}
+                              className="flex items-center gap-3 w-full p-3 rounded-lg bg-zinc-900/40 hover:bg-zinc-900 border border-zinc-800/50 hover:border-zinc-700 transition-all group text-left disabled:opacity-50"
+                            >
                               <span className="text-zinc-500 group-hover:text-blue-400 transition-colors">
                                 <Sparkles size={16} />
                               </span>
@@ -470,12 +508,14 @@ TO REPLACE CONTENT:
                         </div>
                       )}
                     </div>
-                    <div className="p-4 bg-zinc-950 border-t border-zinc-900/50">
-                      <PromptInputBox
-                        onSend={handleSendMessage}
-                        isLoading={isLoading}
-                      />
-                    </div>
+                    {currentNote && (
+                      <div className="p-4 bg-zinc-950 border-t border-zinc-900/50">
+                        <PromptInputBox
+                          onSend={handleSendMessage}
+                          isLoading={isLoading}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
 
