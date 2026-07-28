@@ -45,16 +45,6 @@ function App() {
     loadApiKey();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      console.log(
-        "Key pressed:",
-        event.key,
-        "metaKey:",
-        event.metaKey,
-        "altKey:",
-        event.altKey,
-        "ctrlKey:",
-        event.ctrlKey,
-      );
       if ((event.metaKey || event.altKey) && event.key === "p") {
         event.preventDefault();
         openCommandPalette();
